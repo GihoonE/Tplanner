@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Student {
+  id               Int    @id @default(autoincrement())
+  name             String
+  subject          String
+  grade            String
+  school           String
+  color            String // s-blue, s-teal, etc.
+  avatarChar       String
+  status           String // active, warning, inactive
+  startDate        String // "2024-09"
+  totalSessions    Int    @default(0)
+  hwCompletionRate Int    @default(0)
+  sessions         Session[]
+}
+
+
+// FK studentId references student(id)
+// 그러나 @relation은 참조하는 왜래키 컬럼이 아니라 관계있는 필드와 연결지어준다
+model Session {
+  id           Int       @id @default(autoincrement())
+  studentId    Int?
+  student      Student?  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  start        DateTime
+  end          DateTime
+  place        String    @default("")
+  notes        String    @default("")
+  understanding String   @default("") // good, normal, hard
+  focus        String    @default("") // high, normal, low
+  homework     HomeworkItem[]
+}
+
+model HomeworkItem {
+  id        Int     @id @default(autoincrement())
+  sessionId Int
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text      String
+  done      Boolean @default(false)
+}

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+
+# Environment (secrets)
+.env
+.env*.local
+
+# SQLite (로컬·테스트 DB)
+prisma/dev.db
+prisma/test.db
+
+# Next.js
+.next/
+out/
+
+# Vercel
+.vercel
+
+# TypeScript incremental (선택)
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ESLint
+.eslintcache
+
+# IDE (선택: 팀에서 공유하면 해당 줄 제거)
+.idea/

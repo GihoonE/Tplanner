@@ -1,0 +1,122 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --hour-h: 56px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #f0f6fc;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb  { background: #e2e8f0; border-radius: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+
+/* ── Calendar grid ── */
+.hour-cell {
+  height: var(--hour-h);
+  border-bottom: 1px solid #e2e8f0;
+  position: relative;
+}
+.hour-cell::after {
+  content: '';
+  position: absolute;
+  bottom: calc(var(--hour-h) / 2);
+  left: 0; right: 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+/* ── Session block color themes ── */
+.session-s-blue   { background: linear-gradient(160deg,#bae6fd,#93c5fd); color: #1e40af; border: 1px solid #93c5fd; }
+.session-s-teal   { background: linear-gradient(160deg,#99f6e4,#5eead4); color: #0f766e; border: 1px solid #5eead4; }
+.session-s-purple { background: linear-gradient(160deg,#e9d5ff,#c4b5fd); color: #6b21a8; border: 1px solid #c4b5fd; }
+.session-s-amber  { background: linear-gradient(160deg,#fef3c7,#fde68a); color: #92400e; border: 1px solid #fde68a; }
+.session-s-green  { background: linear-gradient(160deg,#bbf7d0,#86efac); color: #14532d; border: 1px solid #86efac; }
+.session-s-coral  { background: linear-gradient(160deg,#fecdd3,#fda4af); color: #9f1239; border: 1px solid #fda4af; }
+.session-new      { background: rgba(14,165,233,.1); border: 2px dashed #38bdf8; color: #0369a1; }
+
+/* Now line */
+.now-line {
+  position: absolute;
+  left: -1px; right: 0;
+  height: 2px;
+  z-index: 8;
+  pointer-events: none;
+  background: #ef4444;
+}
+.now-line::before {
+  content: '';
+  position: absolute;
+  left: -5px; top: -4px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,.2);
+}
+
+/* Drag ghost */
+.drag-ghost {
+  position: absolute;
+  border-radius: 8px;
+  background: rgba(14,165,233,.13);
+  border: 2px dashed #38bdf8;
+  pointer-events: none;
+  z-index: 15;
+  display: none;
+}
+
+/* Modal overlay */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.22);
+  backdrop-filter: blur(3px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Field base — shared input/textarea style */
+.field-base {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #1e293b;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color .14s, box-shadow .14s;
+}
+.field-base:focus {
+  background: white;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(14,165,233,.1);
+}
+.field-base::placeholder { color: #cbd5e1; }
+
+/* Animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-fade-up { animation: fadeUp 0.22s cubic-bezier(.22,1,.36,1); }
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(.96) translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-scale-in { animation: scaleIn 0.22s cubic-bezier(.34,1.56,.64,1); }
