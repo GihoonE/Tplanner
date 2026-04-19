@@ -3,7 +3,7 @@
 import { useTutorStore, useNow, useTzData } from "@/store";
 import { fmtTz, formatFullDate } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
-import { COLOR_TOP, COLOR_TEXT, AVATAR_BG } from "@/lib/constants";
+import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
 import { Button } from "@/components/ui/Button";
 import { useState, useEffect } from "react";
 import type { HomeworkItem, Understanding, Focus } from "@/types";
@@ -190,7 +190,7 @@ export function SessionModal() {
         <div
           className="h-1 w-full flex-shrink-0"
           style={{
-            background: `linear-gradient(90deg,${COLOR_TOP[color]},${COLOR_TOP[color]}77)`,
+            background: `linear-gradient(90deg,${resolveColorTop(color)},${resolveColorTop(color)}77)`,
           }}
         />
 
@@ -199,7 +199,7 @@ export function SessionModal() {
           <div
             className="w-11 h-11 rounded-full flex items-center justify-center text-[17px] font-bold text-white flex-shrink-0"
             style={{
-              background: AVATAR_BG[color],
+              background: resolveAvatarBg(color),
               boxShadow: "0 2px 8px rgba(0,0,0,.12)",
             }}
           >
@@ -208,7 +208,7 @@ export function SessionModal() {
           <div className="flex-1">
             <div
               className="text-[11px] font-bold uppercase tracking-wide mb-0.5"
-              style={{ color: COLOR_TEXT[color] }}
+              style={{ color: resolveColorText(color) }}
             >
               {student?.subject ?? "새 수업"}
             </div>

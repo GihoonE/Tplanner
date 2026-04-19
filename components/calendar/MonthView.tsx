@@ -5,6 +5,7 @@ import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
 import { addDays, sameDay, fmtTz } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO } from "@/lib/constants";
+import { resolveSessionSurfaceStyle } from "@/lib/studentColor";
 
 export function MonthView() {
   const sessions    = useSessions();
@@ -71,12 +72,13 @@ export function MonthView() {
 
               {daySes.slice(0, 3).map((s) => {
                 const st = students.find((x) => x.id === s.studentId);
+                const chip = resolveSessionSurfaceStyle(st?.color ?? "s-blue");
                 return (
                   <div
                     key={s.id}
                     onClick={(e) => { e.stopPropagation(); openModal(s.id); }}
-                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80
-                      session-${st?.color ?? "s-blue"}`}
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80"
+                    style={chip}
                   >
                     {fmtTz(s.start, primaryOffset)} {st?.name ?? "수업"}
                   </div>

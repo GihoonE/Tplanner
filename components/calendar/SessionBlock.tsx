@@ -5,6 +5,7 @@ import { useTutorStore } from "@/store";
 import { visibleSlice, topPxForDate, heightPxForDuration, fmtTz } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { HOUR_HEIGHT_PX } from "@/lib/constants";
+import { resolveSessionSurfaceStyle } from "@/lib/studentColor";
 import type { Session, Student } from "@/types";
 
 interface SessionBlockProps {
@@ -40,18 +41,19 @@ export function SessionBlock({
   const topPx = topPxForDate(visStart, primaryOffset);
   const hPx   = Math.max(heightPxForDuration(visStart.getTime(), visEnd.getTime()), 24);
 
-  const colorClass = student ? `session-${student.color}` : "session-new";
+  const surface = student ? resolveSessionSurfaceStyle(student.color) : null;
   const r = `${fromPrev ? "3px" : "8px"} ${fromPrev ? "3px" : "8px"} ${toNext ? "3px" : "8px"} ${toNext ? "3px" : "8px"}`;
 
   return (
     <div
-      className={`${colorClass} absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity] z-[2] hover:z-[5]`}
+      className={`absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity] z-[2] hover:z-[5] ${student ? "" : "session-new"}`}
       style={{
         top:          topPx,
         height:       hPx,
         borderRadius: r,
         opacity:      isPast ? 0.45 : 1,
         boxShadow:    isNow ? "0 0 0 2px #0ea5e9, 0 0 0 4px rgba(14,165,233,.2)" : undefined,
+        ...(surface ?? {}),
       }}
       data-id={session.id}
       onMouseDown={onMouseDown}

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import {
+  isValidStudentColor,
+  normalizeStoredStudentColor,
+} from "@/lib/studentColor";
 
 /**
  * GET /api/students
@@ -37,13 +41,7 @@ export async function GET() {
           subject: s.subject,
           grade: s.grade,
           school: s.school,
-          color: s.color as
-            | "s-blue"
-            | "s-teal"
-            | "s-purple"
-            | "s-amber"
-            | "s-green"
-            | "s-coral",
+          color: s.color,
           avatarChar: s.avatarChar,
           status: s.status as "active" | "warning" | "inactive",
           startDate: s.startDate,
@@ -80,6 +78,16 @@ export async function POST(request: Request) {
       totalSessions,
       hwCompletionRate,
     } = await request.json();
+
+    const rawColor = color ?? "s-blue";
+    if (!isValidStudentColor(rawColor)) {
+      return NextResponse.json(
+        { error: "유효하지 않은 색상입니다. (프리셋 또는 #RRGGBB)" },
+        { status: 400 },
+      );
+    }
+    const storedColor = normalizeStoredStudentColor(rawColor);
+
     // 학생 정보를 데이터베이스에 저장
     const student = await prisma.student.create({
       data: {
@@ -87,7 +95,7 @@ export async function POST(request: Request) {
         subject,
         grade,
         school,
-        color,
+        color: storedColor,
         avatarChar,
         status,
         startDate,

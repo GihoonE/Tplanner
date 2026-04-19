@@ -112,9 +112,54 @@ function minFromMidPrimary(d: Date, primaryOffset: number): number {
 
 ---
 
-## 다음 단계 (백엔드 연동)
+## API (Route Handlers)
 
-1. `lib/constants.ts`의 `SEED_*` 데이터를 Supabase 쿼리로 교체
-2. `store/index.ts`의 액션에 `fetch()`/`supabase.from()` 추가
-3. Supabase Row Level Security로 선생님별 데이터 격리
-4. `app/reports/page.tsx`의 AI 생성 버튼에 Claude API 연결
+기본은 **동일 오리진** `fetch("/api/...")`, 요청·응답 본문은 **JSON** (`Content-Type: application/json`).  
+수업 응답에서 `start` / `end`는 **ISO 8601 문자열**입니다.
+
+### 학생 `/api/students`
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| **GET** | `/api/students` | 전체 학생 목록. 각 항목에 `lastSessionAt`, `lastSessionContent`, `thisMonthSessionCount` 포함(목록용 집계). |
+| **POST** | `/api/students` | 학생 생성. Body: `name`, `subject`, `grade`, `school`, `color`, `avatarChar`, `status`, `startDate`, `totalSessions`, `hwCompletionRate`. 성공 시 생성된 `Student` 객체. |
+
+### 학생 단건 `/api/students/[id]`
+
+`[id]`는 숫자 학생 id.
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| **GET** | `/api/students/[id]` | 학생 단건 + `sessions`(내림차순 `start`) 및 각 수업의 `homework`. Prisma 직렬화(Date 등) 그대로 JSON. |
+| **PATCH** | `/api/students/[id]` | 부분 수정. Body에 넣은 필드만 갱신: `name`, `subject`, `grade`, `school`, `color`, `avatarChar`, `status`, `startDate`, `totalSessions`, `hwCompletionRate`. 응답은 갱신된 학생 행 전체. |
+| **DELETE** | `/api/students/[id]` | 학생 삭제. 스키마상 해당 학생의 **수업·숙제는 CASCADE**로 함께 삭제됨. 응답은 삭제 직전 스냅샷(`sessions` 포함). |
+
+### 수업 `/api/sessions`
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| **GET** | `/api/sessions` | **전체** 수업 목록(`homework` 포함), `start`/`end` ISO 문자열. 특정 학생만 보려면 클라이언트에서 필터하거나 `GET /api/sessions/[id]`로 단건 조회. |
+| **POST** | `/api/sessions` | 수업 생성. 필수: `studentId`, `start`, `end`. 선택: `place`, `notes`, `understanding`, `focus`, `homework: [{ text, done? }]`. 응답은 단건과 동일 형태. |
+
+### 수업 단건 `/api/sessions/[id]`
+
+`[id]`는 숫자 수업 id.
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| **GET** | `/api/sessions/[id]` | 수업 단건 + `homework`, 날짜 ISO. |
+| **PATCH** | `/api/sessions/[id]` | `place`, `notes`, `understanding`, `focus` 및 배열 `homework` 전달 시 숙제 전체 교체(삭제 후 재생성). |
+| **DELETE** | `/api/sessions/[id]` | 수업 삭제(숙제는 DB CASCADE). |
+
+### DB · 기타 스크립트
+
+- **Prisma + SQLite**: `DATABASE_URL` (예: `file:./prisma/dev.db`), 마이그레이션 `npm run db:migrate`, 시드 `npm run db:seed`
+- **고아 수업 정리**(예전 `SetNull` 잔여 등): `npm run db:cleanup-orphan-sessions` — 자세한 옵션은 `docs/DEV_LOG_2026-04-12.md` 참고
+
+---
+
+## 다음 단계 (아이디어)
+
+1. 일부 화면은 여전히 Zustand 시드 데이터와 병행 — 나머지 화면도 위 API로 통일
+2. 인증·멀티 테넌시(예: Supabase + RLS) 연동 시 API에 세션/소유자 검증 추가
+3. `app/reports/page.tsx`의 AI 생성 등 외부 API 연동

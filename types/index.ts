@@ -2,13 +2,19 @@
 //  Core domain types for TutorDesk
 // ─────────────────────────────────────────
 
-export type SubjectColor =
-  | "s-blue"
-  | "s-teal"
-  | "s-purple"
-  | "s-amber"
-  | "s-green"
-  | "s-coral";
+export const STUDENT_PRESET_COLORS = [
+  "s-blue",
+  "s-teal",
+  "s-purple",
+  "s-amber",
+  "s-green",
+  "s-coral",
+] as const;
+
+export type SubjectColor = (typeof STUDENT_PRESET_COLORS)[number];
+
+/** 프리셋 키(s-*) 또는 커스텀 #rrggbb */
+export type StudentColor = string;
 
 export type Understanding = "good" | "normal" | "hard" | "";
 export type Focus = "high" | "normal" | "low" | "";
@@ -23,7 +29,7 @@ export interface Student {
   subject: string;
   grade: string; // e.g. "고2"
   school: string;
-  color: SubjectColor;
+  color: StudentColor;
   avatarChar: string; // Single Korean character for avatar
   status: StudentStatus;
   startDate: string; // "2024-09"

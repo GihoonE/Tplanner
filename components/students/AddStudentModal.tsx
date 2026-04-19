@@ -2,30 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { COLOR_TOP } from "@/lib/constants";
-import type { Student, StudentStatus, SubjectColor } from "@/types";
-
-const COLORS: SubjectColor[] = [
-  "s-blue",
-  "s-teal",
-  "s-purple",
-  "s-amber",
-  "s-green",
-  "s-coral",
-];
+import {
+  defaultStartMonthValue,
+  StartMonthPicker,
+} from "@/components/students/StartMonthPicker";
+import { StudentColorPicker } from "@/components/students/StudentColorPicker";
+import type { Student, StudentColor, StudentStatus } from "@/types";
 
 const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
   { v: "active", label: "활성" },
   { v: "warning", label: "주의" },
   { v: "inactive", label: "휴식" },
 ];
-
-function defaultMonthValue() {
-  const d = new Date();
-  // getMonth: 0부터 시작
-  // padStart(2,"0"): 1자리면 0을 앞에 붙임
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 function firstChar(s: string) {
   const t = s.trim();
@@ -46,10 +34,10 @@ export function AddStudentModal({
   const [subject, setSubject] = useState("");
   const [grade, setGrade] = useState("");
   const [school, setSchool] = useState("");
-  const [color, setColor] = useState<SubjectColor>("s-blue");
+  const [color, setColor] = useState<StudentColor>("s-blue");
   const [avatarChar, setAvatarChar] = useState("");
   const [status, setStatus] = useState<StudentStatus>("active");
-  const [startDate, setStartDate] = useState(defaultMonthValue);
+  const [startDate, setStartDate] = useState(defaultStartMonthValue);
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -63,7 +51,7 @@ export function AddStudentModal({
     setColor("s-blue");
     setAvatarChar("");
     setStatus("active");
-    setStartDate(defaultMonthValue());
+    setStartDate(defaultStartMonthValue());
     setLocalError(null);
     setSaving(false);
   }, [open]);
@@ -228,22 +216,11 @@ export function AddStudentModal({
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide block mb-1.5">
               색상
             </span>
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-9 h-9 rounded-xl border-2 transition-all ${
-                    color === c
-                      ? "border-slate-900 scale-105 shadow-md"
-                      : "border-transparent hover:scale-105"
-                  }`}
-                  style={{ background: COLOR_TOP[c] }}
-                  title={c}
-                />
-              ))}
-            </div>
+            <StudentColorPicker
+              value={color}
+              onChange={setColor}
+              disabled={saving}
+            />
           </div>
 
           <div>
@@ -268,17 +245,17 @@ export function AddStudentModal({
             </div>
           </div>
 
-          <label className="block">
+          <div className="block">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
               수업 시작 (월)
             </span>
-            <input
-              type="month"
+            <StartMonthPicker
+              className="mt-1"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="mt-1 w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:border-sky-400"
+              onChange={setStartDate}
+              disabled={saving}
             />
-          </label>
+          </div>
 
           {/* <div className="grid grid-cols-2 gap-2.5">
             <label className="block">

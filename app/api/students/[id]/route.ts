@@ -1,5 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import {
+  isValidStudentColor,
+  normalizeStoredStudentColor,
+} from "@/lib/studentColor";
 
 export async function GET(
   _req: NextRequest,
@@ -62,6 +66,16 @@ export async function PATCH(
       totalSessions,
       hwCompletionRate,
     } = body;
+
+    if (color != null) {
+      if (!isValidStudentColor(color)) {
+        return NextResponse.json(
+          { error: "유효하지 않은 색상입니다. (프리셋 또는 #RRGGBB)" },
+          { status: 400 },
+        );
+      }
+    }
+
     const updated = await prisma.student.update({
       where: { id: numId },
       data: {
@@ -69,7 +83,9 @@ export async function PATCH(
         ...(subject != null && { subject }),
         ...(grade != null && { grade }),
         ...(school != null && { school }),
-        ...(color != null && { color }),
+        ...(color != null && {
+          color: normalizeStoredStudentColor(color),
+        }),
         ...(avatarChar != null && { avatarChar }),
         ...(status != null && { status }),
         ...(startDate != null && { startDate }),

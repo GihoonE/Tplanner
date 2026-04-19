@@ -1,6 +1,6 @@
-import { AVATAR_BG } from "@/lib/constants";
+import { resolveAvatarBg } from "@/lib/studentColor";
 import { cn } from "@/lib/utils";
-import type { SubjectColor } from "@/types";
+import type { StudentColor } from "@/types";
 
 export function Avatar({
   char,
@@ -9,7 +9,7 @@ export function Avatar({
   className,
 }: {
   char: string;
-  color: SubjectColor;
+  color: StudentColor;
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
@@ -21,7 +21,7 @@ export function Avatar({
         sizes[size],
         className
       )}
-      style={{ background: AVATAR_BG[color] }}
+      style={{ background: resolveAvatarBg(color) }}
     >
       {char}
     </div>

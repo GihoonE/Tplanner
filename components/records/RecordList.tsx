@@ -1,25 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { useTutorStore, useSessions } from "@/store";
+import { useTzData, useNow } from "@/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { fmtTz } from "@/lib/utils";
-import { getPrimaryOffset } from "@/lib/utils";
-import { useTzData, useNow } from "@/store";
+import { fmtTz, getPrimaryOffset } from "@/lib/utils";
+import type { Session, Student } from "@/types";
 
-export function RecordList() {
+type RecordListProps = {
+  sessions: Session[];
+  students: Student[];
+  activeId: number | null;
+  onSelect: (id: number) => void;
+  loading: boolean;
+  error: string | null;
+};
+
+export function RecordList({
+  sessions,
+  students,
+  activeId,
+  onSelect,
+  loading,
+  error,
+}: RecordListProps) {
   const [search, setSearch] = useState("");
-  const sessions = useSessions();
-  const students = useTutorStore((s) => s.students);
-  const activeId = useTutorStore((s) => s.activeRecordId);
-  const setActive = useTutorStore((s) => s.setActiveRecord);
   const tzData = useTzData();
   const now = useNow();
   const primaryOffset = getPrimaryOffset(tzData);
 
-  // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
   const sorted = [...sessions].sort(
+    // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
     (a, b) => b.start.getTime() - a.start.getTime(),
   );
   const filtered = sorted.filter((s) => {
@@ -32,6 +43,26 @@ export function RecordList() {
       st?.grade.toLowerCase().includes(q)
     );
   });
+
+  if (loading) {
+    return (
+      <div className="w-[300px] flex-shrink-0 border-r border-slate-100 bg-slate-50 overflow-y-auto p-4">
+        <p className="text-[13px] text-slate-400 font-medium text-center py-12">
+          불러오는 중…
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-[300px] flex-shrink-0 border-r border-slate-100 bg-slate-50 overflow-y-auto p-4">
+        <p className="text-[13px] text-red-500 font-medium text-center py-8 px-2">
+          {error}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-[300px] flex-shrink-0 border-r border-slate-100 bg-slate-50 overflow-y-auto p-4">
@@ -59,11 +90,10 @@ export function RecordList() {
         return (
           <div
             key={s.id}
-            onClick={() => setActive(s.id)}
+            onClick={() => onSelect(s.id)}
             className={`bg-white rounded-2xl border p-4 mb-2.5 cursor-pointer transition-all shadow-sm hover:-translate-y-px hover:shadow-md
               ${isActive ? "border-sky-400 shadow-[0_0_0_3px_rgba(14,165,233,.1)]" : "border-slate-100 hover:border-sky-200"}`}
           >
-            {/* Top row */}
             <div className="flex items-center gap-2 mb-2">
               {st ? (
                 <Avatar char={st.avatarChar} color={st.color} size="sm" />
@@ -83,14 +113,12 @@ export function RecordList() {
               </div>
             </div>
 
-            {/* Preview */}
             <p
               className={`text-[12px] leading-snug mb-2.5 line-clamp-2 ${hasNotes ? "text-slate-500" : "text-slate-300 italic"}`}
             >
               {hasNotes ? s.notes : "기록 없음 — 클릭해서 작성하기"}
             </p>
 
-            {/* Chips */}
             <div className="flex flex-wrap gap-1.5">
               <span className="text-[10px] font-semibold bg-sky-50 text-sky-600 border border-sky-100 px-2 py-0.5 rounded-full">
                 {fmtTz(s.start, primaryOffset)}–{fmtTz(s.end, primaryOffset)}

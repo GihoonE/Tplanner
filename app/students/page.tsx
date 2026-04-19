@@ -33,7 +33,14 @@ function formatStartMonthLabel(startDate: string) {
 
 /** 학생 열은 좁게, 학교·과목은 넓게. 전체는 min-width로 가로 스크롤 가능 */
 const TABLE_GRID =
-  "minmax(8rem,1fr) minmax(10rem,2fr) minmax(7rem,1.35fr) minmax(5.5rem,0.95fr) minmax(6.25rem,max-content) max-content max-content";
+  "minmax(5rem,1fr) minmax(10rem,2fr) minmax(18rem,1.35fr) minmax(5.5rem,0.95fr) minmax(6rem,max-content) minmax(3rem,max-content) max-content";
+
+/** 헤더/바디 — 열별 좌·우 정렬 (그리드 트랙 안에서 동일 규칙) */
+const headTypo = "text-[11px] font-bold uppercase tracking-wide text-slate-400";
+const headCellLeft = `flex min-w-0 w-full items-center justify-start ${headTypo}`;
+const headCellRight = `flex min-w-0 w-full items-center justify-end text-end ${headTypo}`;
+const bodyCellLeft = "flex min-w-0 w-full items-center justify-start";
+const bodyCellRight = "flex min-w-0 w-full items-center justify-end";
 
 function cellScrollClass(extra = "") {
   return `min-w-0 max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain ${extra}`.trim();
@@ -53,12 +60,8 @@ function compareStudents(
     return c !== 0 ? c * d : (a.id - b.id) * d;
   }
   if (key === "lastSession") {
-    const ta = a.lastSessionAt
-      ? new Date(a.lastSessionAt).getTime()
-      : null;
-    const tb = b.lastSessionAt
-      ? new Date(b.lastSessionAt).getTime()
-      : null;
+    const ta = a.lastSessionAt ? new Date(a.lastSessionAt).getTime() : null;
+    const tb = b.lastSessionAt ? new Date(b.lastSessionAt).getTime() : null;
     if (ta === null && tb === null) return 0;
     if (ta === null) return 1;
     if (tb === null) return -1;
@@ -83,6 +86,7 @@ function SortHeader({
   sortDir,
   onAsc,
   onDesc,
+  align = "left",
 }: {
   label: string;
   sortKey: StudentSortKey;
@@ -90,10 +94,16 @@ function SortHeader({
   sortDir: "asc" | "desc";
   onAsc: () => void;
   onDesc: () => void;
+  /** 헤더 열이 좌측 정렬인지 우측 정렬인지 (그리드 셀과 맞춤) */
+  align?: "left" | "right";
 }) {
   const active = activeKey === sortKey;
+  const row =
+    align === "right"
+      ? "flex min-w-0 w-full items-center justify-end gap-1.5 text-end"
+      : "flex min-w-0 w-full items-center justify-start gap-1.5 text-start";
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-start">
+    <div className={row}>
       <span className="min-w-0 truncate">{label}</span>
       <span className="inline-flex flex-shrink-0 flex-col leading-none">
         <button
@@ -279,59 +289,82 @@ export default function StudentsPage() {
               <div className="min-w-[52rem]">
                 <div className="bg-white border-b border-slate-100">
                   <div
-                    className="grid px-4 py-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 items-center gap-x-5"
+                    className="grid items-center gap-x-5 bg-slate-50 px-4 py-3"
                     style={{ gridTemplateColumns: TABLE_GRID }}
                   >
-                    <SortHeader
-                      label="학생"
-                      sortKey="name"
-                      activeKey={sortKey}
-                      sortDir={sortDir}
-                      onAsc={() => {
-                        setSortKey("name");
-                        setSortDir("asc");
-                      }}
-                      onDesc={() => {
-                        setSortKey("name");
-                        setSortDir("desc");
-                      }}
-                    />
-                    <span className="min-w-0 text-start">학교</span>
-                    <span className="text-start whitespace-nowrap pr-1">
-                      과목
-                    </span>
-                    <SortHeader
-                      label="최근 수업"
-                      sortKey="lastSession"
-                      activeKey={sortKey}
-                      sortDir={sortDir}
-                      onAsc={() => {
-                        setSortKey("lastSession");
-                        setSortDir("asc");
-                      }}
-                      onDesc={() => {
-                        setSortKey("lastSession");
-                        setSortDir("desc");
-                      }}
-                    />
-                    <span className="text-start whitespace-nowrap">
-                      수업 시작 월
-                    </span>
-                    <SortHeader
-                      label="상태"
-                      sortKey="status"
-                      activeKey={sortKey}
-                      sortDir={sortDir}
-                      onAsc={() => {
-                        setSortKey("status");
-                        setSortDir("asc");
-                      }}
-                      onDesc={() => {
-                        setSortKey("status");
-                        setSortDir("desc");
-                      }}
-                    />
-                    <span className="w-[52px]" aria-hidden />
+                    <div className={`${headCellLeft} gap-2`}>
+                      <span className="block h-7 w-7 shrink-0" aria-hidden />
+                      <div className="min-w-0 flex-1 normal-case">
+                        <SortHeader
+                          label="학생"
+                          sortKey="name"
+                          activeKey={sortKey}
+                          sortDir={sortDir}
+                          align="left"
+                          onAsc={() => {
+                            setSortKey("name");
+                            setSortDir("asc");
+                          }}
+                          onDesc={() => {
+                            setSortKey("name");
+                            setSortDir("desc");
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className={headCellLeft}>
+                      <span className="min-w-0 truncate normal-case">학교</span>
+                    </div>
+                    <div className={`${headCellLeft} pr-1`}>
+                      <span className="whitespace-nowrap normal-case">
+                        과목
+                      </span>
+                    </div>
+                    <div className={headCellLeft}>
+                      <SortHeader
+                        label="최근 수업"
+                        sortKey="lastSession"
+                        activeKey={sortKey}
+                        sortDir={sortDir}
+                        align="left"
+                        onAsc={() => {
+                          setSortKey("lastSession");
+                          setSortDir("asc");
+                        }}
+                        onDesc={() => {
+                          setSortKey("lastSession");
+                          setSortDir("desc");
+                        }}
+                      />
+                    </div>
+                    <div className={headCellRight}>
+                      <span className="whitespace-nowrap normal-case">
+                        수업 시작 월
+                      </span>
+                    </div>
+                    <div className={headCellRight}>
+                      <SortHeader
+                        label="상태"
+                        sortKey="status"
+                        activeKey={sortKey}
+                        sortDir={sortDir}
+                        align="right"
+                        onAsc={() => {
+                          setSortKey("status");
+                          setSortDir("asc");
+                        }}
+                        onDesc={() => {
+                          setSortKey("status");
+                          setSortDir("desc");
+                        }}
+                      />
+                    </div>
+                    <div className="flex min-w-0 w-full items-center justify-center">
+                      <span
+                        className="inline-block h-7 w-[3.25rem] shrink-0"
+                        aria-hidden
+                      />
+                    </div>
                   </div>
                 </div>
                 {displayRows.map((stu) => {
@@ -340,11 +373,11 @@ export default function StudentsPage() {
                     <div
                       key={stu.id}
                       onClick={() => setSelectedId(stu.id)}
-                      className={`grid px-4 py-3.5 border-b border-slate-50 cursor-pointer items-center gap-x-5 transition-colors
+                      className={`grid cursor-pointer items-center gap-x-5 border-b border-slate-50 px-4 py-3 transition-colors
                     ${selectedId === stu.id ? "bg-sky-50" : "hover:bg-sky-50/50"}`}
                       style={{ gridTemplateColumns: TABLE_GRID }}
                     >
-                      <div className="flex min-w-0 w-full items-center gap-2 text-start">
+                      <div className={`${bodyCellLeft} gap-2 text-start`}>
                         <Avatar
                           char={stu.avatarChar}
                           color={stu.color}
@@ -352,7 +385,7 @@ export default function StudentsPage() {
                         />
                         <div
                           className={cellScrollClass(
-                            "max-w-[6.75rem] flex-1 text-start [scrollbar-width:thin]",
+                            "min-w-0 flex-1 text-start [scrollbar-width:thin]",
                           )}
                         >
                           <div className="whitespace-nowrap text-[14px] font-semibold text-slate-900">
@@ -363,64 +396,79 @@ export default function StudentsPage() {
                           </div>
                         </div>
                       </div>
-                      <div
-                        className={cellScrollClass(
-                          "flex min-h-[40px] items-center [scrollbar-width:thin]",
-                        )}
-                      >
-                        <span className="whitespace-nowrap text-[13px] text-slate-600">
-                          {stu.school}
-                        </span>
-                      </div>
-                      <div
-                        className={cellScrollClass(
-                          "flex items-center pr-1 [scrollbar-width:thin]",
-                        )}
-                      >
-                        <Badge
-                          variant="sky"
-                          className="flex-shrink-0 whitespace-nowrap"
+                      <div className={bodyCellLeft}>
+                        <div
+                          className={cellScrollClass(
+                            "min-w-0 [scrollbar-width:thin]",
+                          )}
                         >
-                          {stu.subject}
-                        </Badge>
+                          <span className="whitespace-nowrap text-[13px] text-slate-600">
+                            {stu.school}
+                          </span>
+                        </div>
                       </div>
-                      <div
-                        className={cellScrollClass(
-                          "flex items-center [scrollbar-width:thin]",
-                        )}
-                      >
-                        <span className="whitespace-nowrap text-[12px] text-slate-500 tabular-nums">
-                          {lastAt
-                            ? `${new Date(lastAt).getMonth() + 1}월 ${new Date(lastAt).getDate()}일`
-                            : "—"}
-                        </span>
+                      <div className={`${bodyCellLeft} pr-1`}>
+                        <div
+                          className={cellScrollClass(
+                            "min-w-0 [scrollbar-width:thin]",
+                          )}
+                        >
+                          <Badge
+                            variant="sky"
+                            className="shrink-0 whitespace-nowrap"
+                          >
+                            {stu.subject}
+                          </Badge>
+                        </div>
                       </div>
-                      <div
-                        className={cellScrollClass(
-                          "flex items-center [scrollbar-width:thin]",
-                        )}
-                      >
-                        <span className="whitespace-nowrap text-[12px] text-slate-600 tabular-nums">
-                          {formatStartMonthLabel(stu.startDate)}
-                        </span>
+                      <div className={bodyCellLeft}>
+                        <div
+                          className={cellScrollClass(
+                            "flex min-w-0 justify-start [scrollbar-width:thin]",
+                          )}
+                        >
+                          <span className="whitespace-nowrap text-[12px] text-slate-500 tabular-nums">
+                            {lastAt
+                              ? `${new Date(lastAt).getMonth() + 1}월 ${new Date(lastAt).getDate()}일`
+                              : "—"}
+                          </span>
+                        </div>
                       </div>
-                      <Badge
-                        variant={STATUS_BADGE[stu.status]}
-                        className="justify-self-start whitespace-nowrap"
-                      >
-                        {STATUS_LABEL[stu.status]}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-[52px] justify-self-end text-[11px] px-2 py-1 flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditStudent(stu);
-                        }}
-                      >
-                        변경
-                      </Button>
+                      <div className={bodyCellRight}>
+                        <div
+                          className={cellScrollClass(
+                            "flex min-w-0 w-full justify-end [scrollbar-width:thin]",
+                          )}
+                        >
+                          <span className="whitespace-nowrap text-[12px] text-slate-600 tabular-nums">
+                            {formatStartMonthLabel(stu.startDate)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={bodyCellRight}>
+                        <div className="flex min-w-0 w-full justify-end">
+                          <Badge
+                            variant={STATUS_BADGE[stu.status]}
+                            className="shrink-0 whitespace-nowrap"
+                          >
+                            {STATUS_LABEL[stu.status]}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="flex min-w-0 w-full items-center justify-center">
+                        <Button
+                          type="button"
+                          variant="soft"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditStudent(stu);
+                          }}
+                        >
+                          변경
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}

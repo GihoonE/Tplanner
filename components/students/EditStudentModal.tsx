@@ -2,17 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { COLOR_TOP } from "@/lib/constants";
-import type { Student, StudentStatus, SubjectColor } from "@/types";
-
-const COLORS: SubjectColor[] = [
-  "s-blue",
-  "s-teal",
-  "s-purple",
-  "s-amber",
-  "s-green",
-  "s-coral",
-];
+import { StartMonthPicker } from "@/components/students/StartMonthPicker";
+import { StudentColorPicker } from "@/components/students/StudentColorPicker";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import type { Student, StudentColor, StudentStatus } from "@/types";
 
 const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
   { v: "active", label: "활성" },
@@ -47,7 +40,7 @@ export function EditStudentModal({
   const [subject, setSubject] = useState("");
   const [grade, setGrade] = useState("");
   const [school, setSchool] = useState("");
-  const [color, setColor] = useState<SubjectColor>("s-blue");
+  const [color, setColor] = useState<StudentColor>("s-blue");
   const [avatarChar, setAvatarChar] = useState("");
   const [status, setStatus] = useState<StudentStatus>("active");
   const [startDate, setStartDate] = useState("");
@@ -56,6 +49,7 @@ export function EditStudentModal({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!student) return;
@@ -72,6 +66,7 @@ export function EditStudentModal({
     setLocalError(null);
     setSaving(false);
     setDeleting(false);
+    setDeleteConfirmOpen(false);
   }, [student]);
 
   if (!student) return null;
@@ -130,14 +125,7 @@ export function EditStudentModal({
     }
   }
 
-  async function handleDelete() {
-    if (
-      !window.confirm(
-        `"${student.name}" 학생을 삭제할까요? 이 학생의 수업·숙제 기록도 함께 삭제됩니다.`,
-      )
-    ) {
-      return;
-    }
+  async function executeStudentDelete() {
     setDeleting(true);
     setLocalError(null);
     try {
@@ -150,6 +138,7 @@ export function EditStudentModal({
           typeof data.error === "string" ? data.error : "삭제에 실패했습니다.",
         );
       }
+      setDeleteConfirmOpen(false);
       onDeleted(student.id);
       onClose();
     } catch (err) {
@@ -162,6 +151,7 @@ export function EditStudentModal({
   }
 
   return (
+    <>
     <div
       className="modal-backdrop"
       onClick={(e) => {
@@ -252,22 +242,11 @@ export function EditStudentModal({
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide block mb-1.5">
               색상
             </span>
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-9 h-9 rounded-xl border-2 transition-all ${
-                    color === c
-                      ? "border-slate-900 scale-105 shadow-md"
-                      : "border-transparent hover:scale-105"
-                  }`}
-                  style={{ background: COLOR_TOP[c] }}
-                  title={c}
-                />
-              ))}
-            </div>
+            <StudentColorPicker
+              value={color}
+              onChange={setColor}
+              disabled={saving || deleting}
+            />
           </div>
 
           <div>
@@ -292,17 +271,17 @@ export function EditStudentModal({
             </div>
           </div>
 
-          <label className="block">
+          <div className="block">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
               수업 시작 (월)
             </span>
-            <input
-              type="month"
+            <StartMonthPicker
+              className="mt-1"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="mt-1 w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:border-sky-400"
+              onChange={setStartDate}
+              disabled={saving || deleting}
             />
-          </label>
+          </div>
 
           <div className="grid grid-cols-2 gap-2.5">
             <label className="block">
@@ -361,13 +340,37 @@ export function EditStudentModal({
               size="md"
               className="w-full"
               disabled={saving || deleting}
-              onClick={handleDelete}
+              onClick={() => setDeleteConfirmOpen(true)}
             >
-              {deleting ? "삭제 중…" : "학생 삭제"}
+              학생 삭제
             </Button>
           </div>
         </form>
       </div>
     </div>
+
+    <ConfirmDialog
+      open={deleteConfirmOpen}
+      title="학생 삭제"
+      description={
+        <>
+          <span className="font-semibold text-slate-800">
+            {`"${student.name}"`}
+          </span>{" "}
+          학생을 삭제할까요?
+          <br />
+          <span className="mt-2 block text-[12px] text-slate-500">
+            이 학생의 수업·숙제 기록도 함께 삭제되며 복구할 수 없습니다.
+          </span>
+        </>
+      }
+      confirmLabel="삭제"
+      cancelLabel="취소"
+      danger
+      loading={deleting}
+      onCancel={() => !deleting && setDeleteConfirmOpen(false)}
+      onConfirm={executeStudentDelete}
+    />
+    </>
   );
 }

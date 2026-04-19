@@ -71,6 +71,13 @@ export function fmtTz(d: Date, primaryOffset: number): string {
   );
 }
 
+/** 수업 길이를 소수 한 자리 시간 문자열로 (예: 1.5, 1.0) */
+export function formatSessionDurationHours(start: Date, end: Date): string {
+  const raw = (end.getTime() - start.getTime()) / 3600000;
+  if (!Number.isFinite(raw) || raw <= 0) return "0.0";
+  return (Math.round(raw * 10) / 10).toFixed(1);
+}
+
 /** Hour labels for an extra TZ column, relative to primary */
 export function extraHourLabel(h: number, extraOffset: number, primaryOffset: number): number {
   return ((h + extraOffset - primaryOffset) % 24 + 24) % 24;

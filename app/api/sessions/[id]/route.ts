@@ -50,8 +50,26 @@ export async function PATCH(
   try {
     const { id } = params;
     const numId = parseInt(id, 10);
+    if (!Number.isFinite(numId) || numId < 1) {
+      return NextResponse.json(
+        { error: "유효한 수업 id가 아닙니다." },
+        { status: 400 },
+      );
+    }
+
+    const existing = await prisma.session.findUnique({
+      where: { id: numId },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "수업을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
     const body = await _req.json();
-    const { place, notes, understanding, focus, homework } = body;
+    const { place, notes, understanding, focus, homework, start, end } = body;
 
     //transaction: 실패시 롤백 진행
     await prisma.$transaction(async (tx) => {
@@ -64,6 +82,8 @@ export async function PATCH(
           ...(notes != null && { notes }),
           ...(understanding != null && { understanding }),
           ...(focus != null && { focus }),
+          ...(start != null && { start }),
+          ...(end != null && { end }),
         },
       });
 
