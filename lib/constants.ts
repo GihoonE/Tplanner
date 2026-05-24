@@ -40,20 +40,20 @@ export const SESSION_BLOCK_STYLE: Record<string, string> = {
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
 export const DAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
-export const HOUR_HEIGHT_PX = 56; // pixels per hour in week/day view
+export const HOUR_HEIGHT_PX = 28; // pixels per hour in compact week/day view
 
 // ── Timezone catalog ──────────────────────────────────────────────────────────
 export const TZ_CATALOG: Omit<TzEntry, "on" | "primary">[] = [
-  { id: "KST", name: "서울",   label: "KST", offset: 9,    display: "+09:00" },
-  { id: "JST", name: "도쿄",   label: "JST", offset: 9,    display: "+09:00" },
-  { id: "CST", name: "베이징", label: "CST", offset: 8,    display: "+08:00" },
-  { id: "ICT", name: "방콕",   label: "ICT", offset: 7,    display: "+07:00" },
-  { id: "IST", name: "뭄바이", label: "IST", offset: 5.5,  display: "+05:30" },
-  { id: "UTC", name: "UTC",    label: "UTC", offset: 0,    display: "+00:00" },
-  { id: "LON", name: "런던",   label: "GMT", offset: 0,    display: "+00:00" },
-  { id: "CET", name: "파리",   label: "CET", offset: 1,    display: "+01:00" },
-  { id: "EST", name: "뉴욕",   label: "EST", offset: -5,   display: "-05:00" },
-  { id: "CST2",name: "시카고", label: "CST", offset: -6,   display: "-06:00" },
-  { id: "MST", name: "덴버",   label: "MST", offset: -7,   display: "-07:00" },
-  { id: "PST", name: "LA",     label: "PST", offset: -8,   display: "-08:00" },
+  { id: "KST", name: "서울",   label: "KST", timeZone: "Asia/Seoul",       offset: 9,    display: "+09:00" },
+  { id: "JST", name: "도쿄",   label: "JST", timeZone: "Asia/Tokyo",       offset: 9,    display: "+09:00" },
+  { id: "CST", name: "베이징", label: "CST", timeZone: "Asia/Shanghai",    offset: 8,    display: "+08:00" },
+  { id: "ICT", name: "방콕",   label: "ICT", timeZone: "Asia/Bangkok",     offset: 7,    display: "+07:00" },
+  { id: "IST", name: "뭄바이", label: "IST", timeZone: "Asia/Kolkata",     offset: 5.5,  display: "+05:30" },
+  { id: "UTC", name: "UTC",    label: "UTC", timeZone: "UTC",              offset: 0,    display: "+00:00" },
+  { id: "LON", name: "런던",   label: "GMT", timeZone: "Europe/London",    offset: 0,    display: "+00:00" },
+  { id: "CET", name: "파리",   label: "CET", timeZone: "Europe/Paris",     offset: 1,    display: "+01:00" },
+  { id: "EST", name: "뉴욕",   label: "EST", timeZone: "America/New_York", offset: -5,   display: "-05:00" },
+  { id: "CST2",name: "시카고", label: "CST", timeZone: "America/Chicago",  offset: -6,   display: "-06:00" },
+  { id: "MST", name: "덴버",   label: "MST", timeZone: "America/Denver",   offset: -7,   display: "-07:00" },
+  { id: "PST", name: "LA",     label: "PST", timeZone: "America/Los_Angeles", offset: -8, display: "-08:00" },
 ];

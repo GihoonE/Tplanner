@@ -11,7 +11,13 @@ const VIEWS: { id: CalendarView; label: string }[] = [
   { id: "day",   label: "일" },
 ];
 
-export function CalendarTopbar({ onTzPanel }: { onTzPanel: () => void }) {
+export function CalendarTopbar({
+  onTzPanel,
+  readOnly = false,
+}: {
+  onTzPanel: () => void;
+  readOnly?: boolean;
+}) {
   const view         = useCalView();
   const tzData       = useTzData();
   const curWeekStart = useTutorStore((s) => s.curWeekStart);
@@ -95,9 +101,11 @@ export function CalendarTopbar({ onTzPanel }: { onTzPanel: () => void }) {
       </div>
 
       {/* Add button */}
-      <Button variant="primary" size="sm">
-        + 수업 추가
-      </Button>
+      {!readOnly && (
+        <Button variant="primary" size="sm">
+          + 수업 추가
+        </Button>
+      )}
     </div>
   );
 }

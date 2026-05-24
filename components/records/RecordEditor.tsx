@@ -14,7 +14,6 @@ import { SessionTimePicker } from "@/components/records/SessionTimePicker";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
-  HomeworkItem,
   Understanding,
   Focus,
   Session,
@@ -37,6 +36,14 @@ type RecordEditorProps = {
   student: Student | undefined;
   onSessionChange: (s: Session) => void;
   onDeleted: (id: number) => void;
+  readOnly?: boolean;
+};
+
+type HomeworkFromApi = {
+  id: number;
+  sessionId: number;
+  text: string;
+  done: boolean;
 };
 
 export function RecordEditor({
@@ -44,6 +51,7 @@ export function RecordEditor({
   student,
   onSessionChange,
   onDeleted,
+  readOnly = false,
 }: RecordEditorProps) {
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
@@ -71,34 +79,110 @@ export function RecordEditor({
   const sess = session;
 
   function updateField<K extends keyof Session>(key: K, value: Session[K]) {
+    if (readOnly) return;
     onSessionChange({ ...sess, [key]: value });
   }
 
-  function addHw() {
+  async function addHw() {
+    if (readOnly) return;
     if (!hwInput.trim()) return;
-    const next: HomeworkItem[] = [
-      ...sess.homework,
-      { id: Date.now(), text: hwInput.trim(), done: false },
-    ];
-    updateField("homework", next);
-    setHwInput("");
+    const text = hwInput.trim();
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/homeworks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sess.id,
+          text,
+          done: false,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body.error === "string"
+            ? body.error
+            : "숙제 추가에 실패했습니다.",
+        );
+      }
+      const homework = (await res.json()) as HomeworkFromApi;
+      updateField("homework", [
+        ...sess.homework,
+        { id: homework.id, text: homework.text, done: homework.done },
+      ]);
+      setHwInput("");
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "숙제 추가에 실패했습니다.");
+    }
   }
 
-  function toggleHw(id: number) {
-    updateField(
-      "homework",
-      sess.homework.map((h) => (h.id === id ? { ...h, done: !h.done } : h)),
+  async function toggleHw(id: number) {
+    if (readOnly) return;
+    const target = sess.homework.find((h) => h.id === id);
+    if (!target) return;
+    const optimistic = sess.homework.map((h) =>
+      h.id === id ? { ...h, done: !h.done } : h,
     );
+    updateField("homework", optimistic);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/homeworks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: !target.done }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body.error === "string"
+            ? body.error
+            : "숙제 수정에 실패했습니다.",
+        );
+      }
+      const homework = (await res.json()) as HomeworkFromApi;
+      updateField(
+        "homework",
+        optimistic.map((h) =>
+          h.id === id
+            ? { id: homework.id, text: homework.text, done: homework.done }
+            : h,
+        ),
+      );
+    } catch (e) {
+      updateField("homework", sess.homework);
+      setSaveError(e instanceof Error ? e.message : "숙제 수정에 실패했습니다.");
+    }
   }
 
-  function removeHw(id: number) {
+  async function removeHw(id: number) {
+    if (readOnly) return;
+    const previous = sess.homework;
     updateField(
       "homework",
-      sess.homework.filter((h) => h.id !== id),
+      previous.filter((h) => h.id !== id),
     );
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/homeworks/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body.error === "string"
+            ? body.error
+            : "숙제 삭제에 실패했습니다.",
+        );
+      }
+    } catch (e) {
+      updateField("homework", previous);
+      setSaveError(e instanceof Error ? e.message : "숙제 삭제에 실패했습니다.");
+    }
   }
 
   async function handleSave() {
+    if (readOnly) return;
     setSaveError(null);
     try {
       const res = await fetch(`/api/sessions/${sess.id}`, {
@@ -111,10 +195,6 @@ export function RecordEditor({
           focus: sess.focus,
           start: sess.start.toISOString(),
           end: sess.end.toISOString(),
-          homework: sess.homework.map((h) => ({
-            text: h.text,
-            done: h.done,
-          })),
         }),
       });
       if (!res.ok) {
@@ -153,6 +233,7 @@ export function RecordEditor({
   }
 
   async function executeDelete() {
+    if (readOnly) return;
     const id = pendingDeleteId;
     if (id == null) return;
     setDeleting(true);
@@ -211,49 +292,66 @@ export function RecordEditor({
         <div className="grid grid-cols-3 gap-3 mb-5 items-stretch">
           <div className="flex min-h-0 flex-col">
             <Label>날짜</Label>
-            <input
-              readOnly
-              value={`${sess.start.getFullYear()}.${String(sess.start.getMonth() + 1).padStart(2, "0")}.${String(sess.start.getDate()).padStart(2, "0")}`}
-              className="field-base box-border min-h-[5rem] w-full flex-1 text-slate-400"
-              title="시작 시각을 바꾸면 같이 바뀝니다"
-            />
+            <div className="box-border flex min-h-[5rem] w-full flex-1 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-600">
+              {`${sess.start.getFullYear()}.${String(sess.start.getMonth() + 1).padStart(2, "0")}.${String(sess.start.getDate()).padStart(2, "0")}`}
+            </div>
           </div>
           <div className="flex min-h-0 flex-col">
             <Label>수업 시간 ({tzData[0].label})</Label>
-            <SessionTimePicker
-              start={sess.start}
-              end={sess.end}
-              primaryOffset={primaryOffset}
-              tzLabel={tzData[0].label}
-              onCommit={(nextStart, nextEnd) => {
-                onSessionChange({
-                  ...sess,
-                  start: nextStart,
-                  end: nextEnd,
-                });
-              }}
-            />
+            {readOnly ? (
+              <div className="box-border flex min-h-[5rem] w-full flex-1 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-600">
+                {fmtTz(sess.start, primaryOffset)} -{" "}
+                {fmtTz(sess.end, primaryOffset)} (
+                {formatSessionDurationHours(sess.start, sess.end)}시간)
+              </div>
+            ) : (
+              <SessionTimePicker
+                start={sess.start}
+                end={sess.end}
+                primaryOffset={primaryOffset}
+                tzLabel={tzData[0].label}
+                onCommit={(nextStart, nextEnd) => {
+                  onSessionChange({
+                    ...sess,
+                    start: nextStart,
+                    end: nextEnd,
+                  });
+                }}
+              />
+            )}
           </div>
           <div className="flex min-h-0 flex-col">
             <Label>장소</Label>
-            <input
-              value={sess.place}
-              onChange={(e) => updateField("place", e.target.value)}
-              placeholder="장소 입력..."
-              className="field-base box-border min-h-[5rem] w-full flex-1"
-            />
+            {readOnly ? (
+              <div className="box-border flex min-h-[5rem] w-full flex-1 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[13px] font-medium text-slate-600">
+                {sess.place || "장소 미입력"}
+              </div>
+            ) : (
+              <input
+                value={sess.place}
+                onChange={(e) => updateField("place", e.target.value)}
+                placeholder="장소 입력..."
+                className="field-base box-border min-h-[5rem] w-full flex-1"
+              />
+            )}
           </div>
         </div>
 
         <div className="mb-5">
           <Label sync>수업 내용 메모</Label>
-          <textarea
-            rows={5}
-            value={sess.notes}
-            onChange={(e) => updateField("notes", e.target.value)}
-            placeholder="오늘 수업에서 다룬 내용을 기록하세요..."
-            className="w-full field-base resize-none leading-relaxed"
-          />
+          {readOnly ? (
+            <div className="min-h-[130px] whitespace-pre-line rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-[13px] leading-relaxed text-slate-600">
+              {sess.notes || "수업 기록이 아직 작성되지 않았습니다."}
+            </div>
+          ) : (
+            <textarea
+              rows={5}
+              value={sess.notes}
+              onChange={(e) => updateField("notes", e.target.value)}
+              placeholder="오늘 수업에서 다룬 내용을 기록하세요..."
+              className="w-full field-base resize-none leading-relaxed"
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
@@ -263,6 +361,7 @@ export function RecordEditor({
               opts={U_OPTS}
               value={sess.understanding}
               onChange={(v: Understanding) => updateField("understanding", v)}
+              disabled={readOnly}
             />
           </div>
           <div>
@@ -271,6 +370,7 @@ export function RecordEditor({
               opts={F_OPTS}
               value={sess.focus}
               onChange={(v: Focus) => updateField("focus", v)}
+              disabled={readOnly}
             />
           </div>
         </div>
@@ -286,6 +386,7 @@ export function RecordEditor({
                 <button
                   type="button"
                   onClick={() => toggleHw(h.id)}
+                  disabled={readOnly}
                   className={`w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center flex-shrink-0 transition-all
                     ${h.done ? "bg-sky-500 border-sky-500" : "border-slate-300"}`}
                 >
@@ -298,30 +399,34 @@ export function RecordEditor({
                 >
                   {h.text}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => removeHw(h.id)}
-                  className="text-slate-200 hover:text-red-400 text-xs transition-colors px-1"
-                >
-                  ✕
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => removeHw(h.id)}
+                    className="text-slate-200 hover:text-red-400 text-xs transition-colors px-1"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             ))}
           </div>
-          <div className="flex gap-2">
-            <input
-              value={hwInput}
-              onChange={(e) => setHwInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addHw();
-              }}
-              placeholder="숙제 내용..."
-              className="flex-1 field-base"
-            />
-            <Button variant="soft" size="sm" onClick={addHw}>
-              + 추가
-            </Button>
-          </div>
+          {!readOnly && (
+            <div className="flex gap-2">
+              <input
+                value={hwInput}
+                onChange={(e) => setHwInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addHw();
+                }}
+                placeholder="숙제 내용..."
+                className="flex-1 field-base"
+              />
+              <Button variant="soft" size="sm" onClick={addHw}>
+                + 추가
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -329,21 +434,27 @@ export function RecordEditor({
         {saveError && (
           <p className="text-[12px] text-red-500 font-medium">{saveError}</p>
         )}
-        <div className="flex gap-2">
-          <Button variant="primary" onClick={() => void handleSave()}>
-            {saved ? "✓ 저장됨" : "✓ 저장"}
-          </Button>
+        {readOnly ? (
+          <p className="text-[12px] font-semibold text-slate-400">
+            학부모 계정은 수업 기록을 조회만 할 수 있습니다.
+          </p>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="primary" onClick={() => void handleSave()}>
+              {saved ? "✓ 저장됨" : "✓ 저장"}
+            </Button>
 
-          <div className="flex-1" />
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={deleting}
-            onClick={() => setPendingDeleteId(sess.id)}
-          >
-            삭제
-          </Button>
-        </div>
+            <div className="flex-1" />
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={deleting}
+              onClick={() => setPendingDeleteId(sess.id)}
+            >
+              삭제
+            </Button>
+          </div>
+        )}
       </div>
     </div>
 
@@ -382,10 +493,12 @@ function MoodRow<T extends string>({
   opts,
   value,
   onChange,
+  disabled = false,
 }: {
   opts: { v: T; e: string; l: string }[];
   value: string;
   onChange: (v: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex gap-1.5">
@@ -393,9 +506,10 @@ function MoodRow<T extends string>({
         <button
           key={o.v}
           type="button"
-          onClick={() => onChange(o.v)}
+          onClick={() => !disabled && onChange(o.v)}
+          disabled={disabled}
           className={`flex-1 py-2 px-1 rounded-xl border-[1.5px] text-[11px] font-semibold text-center transition-all
-            ${value === o.v ? "border-sky-500 bg-sky-50 text-sky-700" : "border-slate-200 text-slate-400 hover:border-sky-300"}`}
+            ${value === o.v ? "border-sky-500 bg-sky-50 text-sky-700" : `border-slate-200 text-slate-400 ${disabled ? "cursor-default" : "hover:border-sky-300"}`}`}
         >
           <span className="block text-[16px] mb-0.5">{o.e}</span>
           {o.l}

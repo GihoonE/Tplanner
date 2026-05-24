@@ -6,7 +6,7 @@ import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
 import { Button } from "@/components/ui/Button";
 import { useState, useEffect } from "react";
-import type { HomeworkItem, Understanding, Focus } from "@/types";
+import type { HomeworkItem, Session, Understanding, Focus } from "@/types";
 
 // API 응답 형식 (start/end는 ISO string)
 type SessionFromApi = {
@@ -22,9 +22,13 @@ type SessionFromApi = {
 };
 
 // Date 변환된 세션 (UI에서 사용)
-type SessionWithDates = Omit<SessionFromApi, "start" | "end"> & {
-  start: Date;
-  end: Date;
+type SessionWithDates = Session;
+
+type HomeworkFromApi = {
+  id: number;
+  sessionId: number;
+  text: string;
+  done: boolean;
 };
 
 // ── Understanding / Focus options ──────────────────────────────────────────────
@@ -44,10 +48,12 @@ function toSessionWithDates(data: SessionFromApi): SessionWithDates {
     ...data,
     start: new Date(data.start),
     end: new Date(data.end),
+    understanding: data.understanding as Understanding,
+    focus: data.focus as Focus,
   };
 }
 
-export function SessionModal() {
+export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
   const [session, setSession] = useState<SessionWithDates | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +64,7 @@ export function SessionModal() {
   const modalTab = useTutorStore((s) => s.modalTab);
   const closeModal = useTutorStore((s) => s.closeModal);
   const setModalTab = useTutorStore((s) => s.setModalTab);
+  const upsertSession = useTutorStore((s) => s.upsertSession);
   const students = useTutorStore((s) => s.students);
   const removeFromStore = useTutorStore((s) => s.deleteSession);
   const now = useNow();
@@ -115,6 +122,7 @@ export function SessionModal() {
     key: K,
     value: SessionWithDates[K],
   ) {
+    if (readOnly) return;
     if (!session) return;
     // ...session -> 세션의 데이터 모두 복사 후 파라미터로 넘어온 key만 새로운 값으로 덮어쓰기
     const updated = { ...session, [key]: value } as SessionWithDates;
@@ -130,7 +138,6 @@ export function SessionModal() {
       ) {
         body[key] = value;
       }
-      if (key === "homework") body.homework = value;
       const res = await fetch(`/api/sessions/${session.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -139,41 +146,95 @@ export function SessionModal() {
       if (res.ok) {
         const data = await res.json();
         // 반환된 api call을 with dates로 변환해 UI 변경
-        setSession(toSessionWithDates(data as SessionFromApi));
+        const nextSession = toSessionWithDates(data as SessionFromApi);
+        setSession(nextSession);
+        upsertSession(nextSession);
       }
     } catch {
       setError("저장 실패");
     }
   }
 
-  function addHw() {
+  async function addHw() {
+    if (readOnly) return;
     // trim(): 앞뒤 공백 제거
     // 공백 제거 후에 내용이 없거나 세션이 존재하지 않으면 함수 종료
     if (!hwInput.trim() || !session) return;
-    const s = session;
-    const newHw: HomeworkItem = {
-      id: Date.now(),
-      text: hwInput.trim(),
-      done: false,
+    const text = hwInput.trim();
+    try {
+      const res = await fetch("/api/homeworks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session.id,
+          text,
+          done: false,
+        }),
+      });
+      if (!res.ok) throw new Error("숙제 추가 실패");
+      const homework = (await res.json()) as HomeworkFromApi;
+      setSession({
+        ...session,
+        homework: [...session.homework, homework],
+      });
+      setHwInput("");
+    } catch {
+      setError("숙제 추가 실패");
+    }
+  }
+
+  async function toggleHw(id: number) {
+    if (readOnly) return;
+    if (!session) return;
+    const target = session.homework.find((h) => h.id === id);
+    if (!target) return;
+    const previous = session;
+    const optimistic = {
+      ...session,
+      homework: session.homework.map((h) =>
+        h.id === id ? { ...h, done: !h.done } : h,
+      ),
     };
-    update("homework", [...s.homework, newHw]);
-    setHwInput("");
+    setSession(optimistic);
+    try {
+      const res = await fetch(`/api/homeworks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: !target.done }),
+      });
+      if (!res.ok) throw new Error("숙제 수정 실패");
+      const homework = (await res.json()) as HomeworkFromApi;
+      setSession({
+        ...optimistic,
+        homework: optimistic.homework.map((h) =>
+          h.id === id
+            ? { id: homework.id, text: homework.text, done: homework.done }
+            : h,
+        ),
+      });
+    } catch {
+      setSession(previous);
+      setError("숙제 수정 실패");
+    }
   }
 
-  function toggleHw(id: number) {
+  async function removeHw(id: number) {
+    if (readOnly) return;
     if (!session) return;
-    update(
-      "homework",
-      session.homework.map((h) => (h.id === id ? { ...h, done: !h.done } : h)),
-    );
-  }
-
-  function removeHw(id: number) {
-    if (!session) return;
-    update(
-      "homework",
-      session.homework.filter((h) => h.id !== id),
-    );
+    const previous = session;
+    setSession({
+      ...session,
+      homework: session.homework.filter((h) => h.id !== id),
+    });
+    try {
+      const res = await fetch(`/api/homeworks/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("숙제 삭제 실패");
+    } catch {
+      setSession(previous);
+      setError("숙제 삭제 실패");
+    }
   }
 
   const color = student?.color ?? "s-blue";
@@ -252,6 +313,7 @@ export function SessionModal() {
               statusText={statusText}
               primaryOffset={primaryOffset}
               onUpdate={update}
+              readOnly={readOnly}
             />
           ) : (
             <RecordTab
@@ -262,6 +324,7 @@ export function SessionModal() {
               onAddHw={addHw}
               onToggleHw={toggleHw}
               onRemoveHw={removeHw}
+              readOnly={readOnly}
             />
           )}
         </div>
@@ -271,7 +334,7 @@ export function SessionModal() {
           {modalTab === "detail" ? (
             <>
               <Button variant="primary" onClick={() => setModalTab("record")}>
-                ✏️ 수업 기록 작성
+                {readOnly ? "수업 기록 보기" : "✏️ 수업 기록 작성"}
               </Button>
               <Button variant="ghost" onClick={closeModal}>
                 닫기
@@ -280,37 +343,41 @@ export function SessionModal() {
           ) : (
             <>
               <Button variant="primary" onClick={closeModal}>
-                ✓ 저장 완료
+                {readOnly ? "닫기" : "✓ 저장 완료"}
               </Button>
               <Button variant="ghost" onClick={() => setModalTab("detail")}>
                 ← 수업 정보
               </Button>
-              <span className="text-[11px] text-slate-300 ml-1">
-                자동저장됨
-              </span>
+              {!readOnly && (
+                <span className="text-[11px] text-slate-300 ml-1">
+                  자동저장됨
+                </span>
+              )}
             </>
           )}
           <div className="flex-1" />
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={async () => {
-              if (!session) return;
-              try {
-                const res = await fetch(`/api/sessions/${session.id}`, {
-                  method: "DELETE",
-                });
-                if (res.ok) {
-                  removeFromStore(session.id);
-                  closeModal();
-                } else setError("삭제 실패");
-              } catch {
-                setError("삭제 실패");
-              }
-            }}
-          >
-            삭제
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={async () => {
+                if (!session) return;
+                try {
+                  const res = await fetch(`/api/sessions/${session.id}`, {
+                    method: "DELETE",
+                  });
+                  if (res.ok) {
+                    removeFromStore(session.id);
+                    closeModal();
+                  } else setError("삭제 실패");
+                } catch {
+                  setError("삭제 실패");
+                }
+              }}
+            >
+              삭제
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -324,6 +391,7 @@ function DetailTab({
   statusText,
   primaryOffset,
   onUpdate,
+  readOnly,
 }: any) {
   return (
     <div>
@@ -336,12 +404,18 @@ function DetailTab({
         </span>
       </Row>
       <Row icon="📍" bg="bg-green-50" label="장소">
-        <input
-          className="bg-transparent border-none outline-none text-[13px] font-semibold text-slate-800 w-full hover:bg-slate-50 focus:bg-sky-50 focus:px-1.5 rounded transition-all cursor-pointer"
-          value={session.place}
-          onChange={(e) => onUpdate("place", e.target.value)}
-          placeholder="장소를 입력하세요"
-        />
+        {readOnly ? (
+          <span className="text-[13px] font-semibold text-slate-800">
+            {session.place || "장소 미입력"}
+          </span>
+        ) : (
+          <input
+            className="bg-transparent border-none outline-none text-[13px] font-semibold text-slate-800 w-full hover:bg-slate-50 focus:bg-sky-50 focus:px-1.5 rounded transition-all cursor-pointer"
+            value={session.place}
+            onChange={(e) => onUpdate("place", e.target.value)}
+            placeholder="장소를 입력하세요"
+          />
+        )}
       </Row>
       <Row icon="📊" bg="bg-amber-50" label="상태">
         {statusText}
@@ -371,21 +445,28 @@ function RecordTab({
   onAddHw,
   onToggleHw,
   onRemoveHw,
+  readOnly,
 }: any) {
   return (
     <div className="flex flex-col gap-5">
       {/* Notes */}
       <div>
         <FieldLabel>
-          수업 내용 메모 <SyncBadge />
+          수업 내용 메모
         </FieldLabel>
-        <textarea
-          rows={4}
-          value={session.notes}
-          onChange={(e) => onUpdate("notes", e.target.value)}
-          placeholder="오늘 수업에서 다룬 내용, 학생 반응, 특이사항 등..."
-          className="w-full bg-slate-50 border border-slate-200 rounded-xl text-[13px] text-slate-800 p-3 leading-relaxed outline-none resize-none focus:border-sky-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(14,165,233,.1)] transition-all"
-        />
+        {readOnly ? (
+          <div className="min-h-[110px] whitespace-pre-line rounded-xl border border-slate-100 bg-slate-50 p-3 text-[13px] leading-relaxed text-slate-700">
+            {session.notes || "수업 기록이 아직 작성되지 않았습니다."}
+          </div>
+        ) : (
+          <textarea
+            rows={4}
+            value={session.notes}
+            onChange={(e) => onUpdate("notes", e.target.value)}
+            placeholder="오늘 수업에서 다룬 내용, 학생 반응, 특이사항 등..."
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl text-[13px] text-slate-800 p-3 leading-relaxed outline-none resize-none focus:border-sky-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(16,67,109,.1)] transition-all"
+          />
+        )}
       </div>
 
       {/* Understanding */}
@@ -395,6 +476,7 @@ function RecordTab({
           opts={U_OPTS}
           value={session.understanding}
           onChange={(v: Understanding) => onUpdate("understanding", v)}
+          disabled={readOnly}
         />
       </div>
 
@@ -405,13 +487,14 @@ function RecordTab({
           opts={F_OPTS}
           value={session.focus}
           onChange={(v: Focus) => onUpdate("focus", v)}
+          disabled={readOnly}
         />
       </div>
 
       {/* Homework */}
       <div>
         <FieldLabel>
-          숙제 <SyncBadge />
+          숙제
         </FieldLabel>
         <div className="flex flex-col gap-1 mb-2">
           {session.homework.map((h: HomeworkItem) => (
@@ -421,6 +504,7 @@ function RecordTab({
             >
               <button
                 onClick={() => onToggleHw(h.id)}
+                disabled={readOnly}
                 className={`w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center flex-shrink-0 transition-all
                   ${h.done ? "bg-sky-500 border-sky-500" : "border-slate-300"}`}
               >
@@ -433,29 +517,33 @@ function RecordTab({
               >
                 {h.text}
               </span>
-              <button
-                onClick={() => onRemoveHw(h.id)}
-                className="text-slate-200 hover:text-red-400 text-xs transition-colors px-1"
-              >
-                ✕
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => onRemoveHw(h.id)}
+                  className="text-slate-200 hover:text-red-400 text-xs transition-colors px-1"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>
-        <div className="flex gap-2">
-          <input
-            value={hwInput}
-            onChange={(e) => setHwInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onAddHw();
-            }}
-            placeholder="숙제 내용 입력..."
-            className="flex-1 bg-slate-50 border border-slate-200 rounded-lg text-[13px] px-3 py-2 outline-none focus:border-sky-400 transition-colors"
-          />
-          <Button variant="soft" size="sm" onClick={onAddHw}>
-            + 추가
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="flex gap-2">
+            <input
+              value={hwInput}
+              onChange={(e) => setHwInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onAddHw();
+              }}
+              placeholder="숙제 내용 입력..."
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg text-[13px] px-3 py-2 outline-none focus:border-sky-400 transition-colors"
+            />
+            <Button variant="soft" size="sm" onClick={onAddHw}>
+              + 추가
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -498,31 +586,26 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SyncBadge() {
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full normal-case tracking-normal">
-      🔄 동기화
-    </span>
-  );
-}
-
 function MoodRow({
   opts,
   value,
   onChange,
+  disabled = false,
 }: {
   opts: any[];
   value: string;
   onChange: (v: any) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex gap-2">
       {opts.map((o) => (
         <button
           key={o.v}
-          onClick={() => onChange(o.v)}
+          onClick={() => !disabled && onChange(o.v)}
+          disabled={disabled}
           className={`flex-1 py-2 px-1 rounded-xl border-[1.5px] text-[12px] font-semibold text-slate-500 transition-all
-            ${value === o.v ? "border-sky-500 bg-sky-50 text-sky-700" : "border-slate-200 hover:border-sky-300 hover:text-sky-600"}`}
+            ${value === o.v ? "border-sky-500 bg-sky-50 text-sky-700" : `border-slate-200 ${disabled ? "cursor-default" : "hover:border-sky-300 hover:text-sky-600"}`}`}
         >
           <span className="block text-[18px] mb-0.5">{o.e}</span>
           {o.l}

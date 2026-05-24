@@ -1,4 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
+import {
+  requireInstructor,
+  requireViewer,
+  sessionStudentAccessWhere,
+} from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 
 // id로 조회
@@ -7,9 +12,15 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   try {
+    const viewer = await requireViewer();
+    if (viewer.response) return viewer.response;
+
     const { id } = params;
-    const s = await prisma.session.findUnique({
-      where: { id: parseInt(id, 10) },
+    const s = await prisma.lessonSession.findFirst({
+      where: {
+        id: parseInt(id, 10),
+        student: sessionStudentAccessWhere(viewer),
+      },
       include: { homework: true },
     });
     if (!s) {
@@ -48,6 +59,9 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const { id } = params;
     const numId = parseInt(id, 10);
     if (!Number.isFinite(numId) || numId < 1) {
@@ -57,8 +71,11 @@ export async function PATCH(
       );
     }
 
-    const existing = await prisma.session.findUnique({
-      where: { id: numId },
+    const existing = await prisma.lessonSession.findFirst({
+      where: {
+        id: numId,
+        student: { instructorId: instructor.userId },
+      },
       select: { id: true },
     });
     if (!existing) {
@@ -69,11 +86,11 @@ export async function PATCH(
     }
 
     const body = await _req.json();
-    const { place, notes, understanding, focus, homework, start, end } = body;
+    const { place, notes, understanding, focus, start, end } = body;
 
     //transaction: 실패시 롤백 진행
     await prisma.$transaction(async (tx) => {
-      await tx.session.update({
+      await tx.lessonSession.update({
         where: { id: numId },
         data: {
           // ...(조건 && {key:value})
@@ -87,23 +104,13 @@ export async function PATCH(
         },
       });
 
-      // 우선 수업 기록 고치면 해당 수업의 모든 숙제 지웠다가 들어오는 요청에 맞춰 다시 생성
-      if (Array.isArray(homework)) {
-        await tx.homeworkItem.deleteMany({ where: { sessionId: numId } });
-        if (homework.length > 0) {
-          await tx.homeworkItem.createMany({
-            data: homework.map((h: { text: string; done: boolean }) => ({
-              sessionId: numId,
-              text: h.text,
-              done: h.done ?? false,
-            })),
-          });
-        }
-      }
     });
 
-    const updated = await prisma.session.findFirst({
-      where: { id: numId },
+    const updated = await prisma.lessonSession.findFirst({
+      where: {
+        id: numId,
+        student: { instructorId: instructor.userId },
+      },
       include: { homework: true },
     });
     if (!updated) {
@@ -139,8 +146,25 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const { id } = params;
-    const s = await prisma.session.delete({
+    const existing = await prisma.lessonSession.findFirst({
+      where: {
+        id: parseInt(id, 10),
+        student: { instructorId: instructor.userId },
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "수업을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
+    const s = await prisma.lessonSession.delete({
       where: { id: parseInt(id, 10) },
     });
     return NextResponse.json({

@@ -1,0 +1,206 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  requireInstructor,
+  requireViewer,
+  sessionStudentAccessWhere,
+} from "@/lib/auth/permissions";
+import { prisma } from "@/lib/db";
+
+type HomeworkWithSession = {
+  id: number;
+  sessionId: number;
+  text: string;
+  done: boolean;
+  session: {
+    id: number;
+    start: Date;
+    end: Date;
+    studentId: number | null;
+    student: {
+      id: number;
+      name: string;
+      subject: string;
+      color: string;
+      avatarChar: string;
+    } | null;
+  };
+};
+
+// 쿼리 상수
+const homeworkInclude = {
+  session: {
+    select: {
+      id: true,
+      start: true,
+      end: true,
+      studentId: true,
+      student: {
+        select: {
+          id: true,
+          name: true,
+          subject: true,
+          color: true,
+          avatarChar: true,
+        },
+      },
+    },
+  },
+} as const;
+
+function serializeHomework(h: HomeworkWithSession) {
+  return {
+    id: h.id,
+    sessionId: h.sessionId,
+    text: h.text,
+    done: h.done,
+    session: {
+      id: h.session.id,
+      start: h.session.start.toISOString(),
+      end: h.session.end.toISOString(),
+      studentId: h.session.studentId,
+      student: h.session.student,
+    },
+  };
+}
+
+function parsePositiveInt(value: string | null, field: string) {
+  if (value == null || value === "") return null;
+  if (!/^\d+$/.test(value)) {
+    return { error: `${field}는 양의 정수여야 합니다.` };
+  }
+  const num = Number(value);
+  if (!Number.isSafeInteger(num) || num < 1) {
+    return { error: `${field}는 양의 정수여야 합니다.` };
+  }
+  return { value: num };
+}
+
+/**
+ * GET /api/homeworks
+ * 숙제 목록 조회. done, studentId, sessionId query로 필터링 가능.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const viewer = await requireViewer();
+    if (viewer.response) return viewer.response;
+
+    const { searchParams } = request.nextUrl;
+    
+    const doneParam = searchParams.get("done");
+    
+    const sessionIdParam = parsePositiveInt(
+      searchParams.get("sessionId"),
+      "sessionId",
+    );
+    const studentIdParam = parsePositiveInt(
+      searchParams.get("studentId"),
+      "studentId",
+    );
+
+    if (sessionIdParam?.error) {
+      return NextResponse.json({ error: sessionIdParam.error }, { status: 400 });
+    }
+    if (studentIdParam?.error) {
+      return NextResponse.json({ error: studentIdParam.error }, { status: 400 });
+    }
+    if (doneParam != null && doneParam !== "true" && doneParam !== "false") {
+      return NextResponse.json(
+        { error: "done은 true 또는 false여야 합니다." },
+        { status: 400 },
+      );
+    }
+
+    const homeworks = await prisma.homeworkItem.findMany({
+      where: {
+        ...(doneParam != null && { done: doneParam === "true" }),
+        ...(sessionIdParam?.value != null && {
+          sessionId: sessionIdParam.value,
+        }),
+        session: {
+          student: sessionStudentAccessWhere(viewer),
+          ...(studentIdParam?.value != null && {
+            studentId: studentIdParam.value,
+          }),
+        },
+      },
+      include: homeworkInclude,
+      orderBy: [{ session: { start: "desc" } }, { id: "asc" }],
+    });
+
+    return NextResponse.json(homeworks.map(serializeHomework));
+  } catch (e) {
+    console.error("[GET /api/homeworks]", e);
+    return NextResponse.json(
+      { error: "숙제 목록을 불러오는 데 실패했습니다." },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * POST /api/homeworks
+ * 특정 수업에 새 숙제 추가.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
+    const body = await request.json();
+    const sessionIdParam = parsePositiveInt(
+      String(body.sessionId ?? ""),
+      "sessionId",
+    );
+    if (sessionIdParam?.error || sessionIdParam?.value == null) {
+      return NextResponse.json(
+        { error: sessionIdParam?.error ?? "sessionId는 필수입니다." },
+        { status: 400 },
+      );
+    }
+
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) {
+      return NextResponse.json(
+        { error: "숙제 내용을 입력하세요." },
+        { status: 400 },
+      );
+    }
+    if (body.done != null && typeof body.done !== "boolean") {
+      return NextResponse.json(
+        { error: "done은 boolean이어야 합니다." },
+        { status: 400 },
+      );
+    }
+
+    const session = await prisma.lessonSession.findFirst({
+      where: {
+        id: sessionIdParam.value,
+        student: { instructorId: instructor.userId },
+      },
+      select: { id: true },
+    });
+    if (!session) {
+      return NextResponse.json(
+        { error: "수업을 찾을 수 없습니다." },
+        { status: 404 },
+      );
+    }
+
+    const homework = await prisma.homeworkItem.create({
+      data: {
+        sessionId: sessionIdParam.value,
+        text,
+        done: body.done ?? false,
+      },
+      include: homeworkInclude,
+    });
+
+    return NextResponse.json(serializeHomework(homework), { status: 201 });
+  } catch (e) {
+    console.error("[POST /api/homeworks]", e);
+    return NextResponse.json(
+      { error: "숙제 생성에 실패했습니다." },
+      { status: 500 },
+    );
+  }
+}

@@ -52,6 +52,8 @@ interface TutorStore {
   upsertSession: (s: Session) => void;
   deleteSession: (id: number) => void;
   addSession: (s: Session) => void;
+  setStudents: (students: Student[]) => void;
+  setSessions: (sessions: Session[]) => void;
 
   // ── Actions — calendar ────────────────────────────────────────────────────
   setCalView: (v: CalendarView) => void;
@@ -68,6 +70,7 @@ interface TutorStore {
 
   // ── Actions — timezone ────────────────────────────────────────────────────
   setPrimaryTz: (id: string) => void;
+  setPrimaryTimezone: (timeZone: string) => void;
   toggleExtraTz: (id: string) => void;
   addExtraTz: (id: string) => void;
   removeExtraTz: (id: string) => void;
@@ -77,7 +80,7 @@ interface TutorStore {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const NOW = new Date(2025, 2, 20, 14, 22, 0, 0); // March 20 2025 14:22
+const NOW = new Date();
 
 function addDays(d: Date, n: number): Date {
   const x = new Date(d);
@@ -123,23 +126,67 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
 
   addSession: (s) => set((state) => ({ sessions: [...state.sessions, s] })),
 
+  setStudents: (students) => set({ students }),
+
+  setSessions: (sessions) => set({ sessions }),
+
   // ── Calendar actions ───────────────────────────────────────────────────────
-  setCalView: (v) => set({ calView: v }),
+  setCalView: (v) =>
+    set((state) => {
+      if (v === "week") {
+        return {
+          calView: v,
+          curWeekStart: weekStart(state.curDay),
+          curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+        };
+      }
+      if (v === "month") {
+        return {
+          calView: v,
+          curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+          curWeekStart: weekStart(state.curDay),
+        };
+      }
+      return {
+        calView: v,
+        curWeekStart: weekStart(state.curDay),
+        curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+      };
+    }),
 
   navigateWeek: (dir) =>
-    set((state) => ({ curWeekStart: addDays(state.curWeekStart, dir * 7) })),
+    set((state) => {
+      const curWeekStart = addDays(state.curWeekStart, dir * 7);
+      return {
+        curWeekStart,
+        curDay: new Date(curWeekStart),
+        curMonth: new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), 1),
+      };
+    }),
 
   navigateMonth: (dir) =>
-    set((state) => ({
-      curMonth: new Date(
+    set((state) => {
+      const curMonth = new Date(
         state.curMonth.getFullYear(),
         state.curMonth.getMonth() + dir,
         1,
-      ),
-    })),
+      );
+      return {
+        curMonth,
+        curDay: new Date(curMonth),
+        curWeekStart: weekStart(curMonth),
+      };
+    }),
 
   navigateDay: (dir) =>
-    set((state) => ({ curDay: addDays(state.curDay, dir) })),
+    set((state) => {
+      const curDay = addDays(state.curDay, dir);
+      return {
+        curDay,
+        curWeekStart: weekStart(curDay),
+        curMonth: new Date(curDay.getFullYear(), curDay.getMonth(), 1),
+      };
+    }),
 
   goToday: () =>
     set((state) => ({
@@ -168,7 +215,21 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
     const cat = TZ_CATALOG.find((c) => c.id === id);
     if (!cat) return;
     set((state) => ({
-      tzData: [{ ...cat, on: true, primary: true }, ...state.tzData.slice(1)],
+      tzData: [
+        { ...cat, on: true, primary: true },
+        ...state.tzData.slice(1).filter((t) => t.id !== cat.id),
+      ],
+    }));
+  },
+
+  setPrimaryTimezone: (timeZone) => {
+    const cat = TZ_CATALOG.find((c) => c.timeZone === timeZone);
+    if (!cat) return;
+    set((state) => ({
+      tzData: [
+        { ...cat, on: true, primary: true },
+        ...state.tzData.slice(1).filter((t) => t.id !== cat.id),
+      ],
     }));
   },
 

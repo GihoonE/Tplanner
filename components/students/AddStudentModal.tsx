@@ -11,8 +11,7 @@ import type { Student, StudentColor, StudentStatus } from "@/types";
 
 const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
   { v: "active", label: "활성" },
-  { v: "warning", label: "주의" },
-  { v: "inactive", label: "휴식" },
+  { v: "inactive", label: "휴식중" },
 ];
 
 function firstChar(s: string) {

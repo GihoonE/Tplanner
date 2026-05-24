@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useTzData, useNow } from "@/store";
+import { useEffect, useState } from "react";
+import { useTzData } from "@/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { fmtTz, getPrimaryOffset } from "@/lib/utils";
@@ -14,6 +14,7 @@ type RecordListProps = {
   onSelect: (id: number) => void;
   loading: boolean;
   error: string | null;
+  initialSearch?: string;
 };
 
 export function RecordList({
@@ -23,10 +24,11 @@ export function RecordList({
   onSelect,
   loading,
   error,
+  initialSearch = "",
 }: RecordListProps) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  const [now, setNow] = useState(() => new Date());
   const tzData = useTzData();
-  const now = useNow();
   const primaryOffset = getPrimaryOffset(tzData);
 
   const sorted = [...sessions].sort(
@@ -43,6 +45,24 @@ export function RecordList({
       st?.grade.toLowerCase().includes(q)
     );
   });
+
+  useEffect(() => {
+    setSearch(initialSearch);
+  }, [initialSearch]);
+
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (loading || error) return;
+    if (filtered.length === 0) return;
+    if (activeId !== null && filtered.some((s) => s.id === activeId)) return;
+    onSelect(filtered[0].id);
+  }, [activeId, error, filtered, loading, onSelect]);
 
   if (loading) {
     return (
@@ -85,14 +105,15 @@ export function RecordList({
         const st = students.find((x) => x.id === s.studentId);
         const isActive = s.id === activeId;
         const hasNotes = s.notes.trim().length > 0;
-        const isDone = s.end < now;
+        const sessionStatus =
+          now < s.start ? "upcoming" : now < s.end ? "ongoing" : "completed";
 
         return (
           <div
             key={s.id}
             onClick={() => onSelect(s.id)}
             className={`bg-white rounded-2xl border p-4 mb-2.5 cursor-pointer transition-all shadow-sm hover:-translate-y-px hover:shadow-md
-              ${isActive ? "border-sky-400 shadow-[0_0_0_3px_rgba(14,165,233,.1)]" : "border-slate-100 hover:border-sky-200"}`}
+              ${isActive ? "border-sky-400 shadow-[0_0_0_3px_rgba(16,67,109,.1)]" : "border-slate-100 hover:border-sky-200"}`}
           >
             <div className="flex items-center gap-2 mb-2">
               {st ? (
@@ -135,8 +156,20 @@ export function RecordList({
               {s.homework.length > 0 && (
                 <Badge variant="gray">숙제 {s.homework.length}개</Badge>
               )}
-              <Badge variant={isDone ? "gray" : "amber"}>
-                {isDone ? "완료" : "예정"}
+              <Badge
+                variant={
+                  sessionStatus === "completed"
+                    ? "gray"
+                    : sessionStatus === "ongoing"
+                      ? "sky"
+                      : "amber"
+                }
+              >
+                {sessionStatus === "completed"
+                  ? "완료"
+                  : sessionStatus === "ongoing"
+                    ? "진행중"
+                    : "예정"}
               </Badge>
             </div>
           </div>

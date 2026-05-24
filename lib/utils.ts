@@ -106,13 +106,21 @@ export function primaryMinToKst(
 }
 
 // ── Calendar pixel helpers ────────────────────────────────────────────────────
-export function topPxForDate(d: Date, primaryOffset: number): number {
-  return minFromMidPrimary(d, primaryOffset) * (HOUR_HEIGHT_PX / 60);
+export function topPxForDate(
+  d: Date,
+  primaryOffset: number,
+  hourHeightPx = HOUR_HEIGHT_PX,
+): number {
+  return minFromMidPrimary(d, primaryOffset) * (hourHeightPx / 60);
 }
 
-export function heightPxForDuration(startMs: number, endMs: number): number {
+export function heightPxForDuration(
+  startMs: number,
+  endMs: number,
+  hourHeightPx = HOUR_HEIGHT_PX,
+): number {
   const durMin = (endMs - startMs) / 60000;
-  return Math.max(durMin * (HOUR_HEIGHT_PX / 60), 24);
+  return Math.max(durMin * (hourHeightPx / 60), 24);
 }
 
 // ── Session helpers ───────────────────────────────────────────────────────────

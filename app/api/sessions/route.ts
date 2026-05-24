@@ -1,4 +1,9 @@
 import { NextResponse, NextRequest } from "next/server";
+import {
+  requireInstructor,
+  requireViewer,
+  sessionStudentAccessWhere,
+} from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 
 /**
@@ -7,7 +12,13 @@ import { prisma } from "@/lib/db";
  */
 export async function GET() {
   try {
-    const sessions = await prisma.session.findMany({
+    const viewer = await requireViewer();
+    if (viewer.response) return viewer.response;
+
+    const sessions = await prisma.lessonSession.findMany({
+      where: {
+        student: sessionStudentAccessWhere(viewer),
+      },
       include: { homework: true },
       orderBy: { start: "desc" },
     });
@@ -44,6 +55,9 @@ export async function GET() {
  */
 export async function POST(_req: NextRequest) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const body = await _req.json();
     const {
       studentId,
@@ -93,8 +107,8 @@ export async function POST(_req: NextRequest) {
       );
     }
 
-    const studentRow = await prisma.student.findUnique({
-      where: { id: sidNum },
+    const studentRow = await prisma.student.findFirst({
+      where: { id: sidNum, instructorId: instructor.userId },
       select: { id: true },
     });
     if (!studentRow) {
@@ -104,7 +118,7 @@ export async function POST(_req: NextRequest) {
       );
     }
 
-    const session = await prisma.session.create({
+    const session = await prisma.lessonSession.create({
       data: {
         studentId: sidNum,
         start: startAt,
@@ -129,7 +143,7 @@ export async function POST(_req: NextRequest) {
       });
     }
 
-    const s = await prisma.session.findFirst({
+    const s = await prisma.lessonSession.findFirst({
       where: { id: session.id },
       include: { homework: true },
     });

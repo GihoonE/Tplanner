@@ -9,8 +9,7 @@ import type { Student, StudentColor, StudentStatus } from "@/types";
 
 const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
   { v: "active", label: "활성" },
-  { v: "warning", label: "주의" },
-  { v: "inactive", label: "휴식" },
+  { v: "inactive", label: "휴식중" },
 ];
 
 function firstChar(s: string) {
@@ -59,7 +58,7 @@ export function EditStudentModal({
     setSchool(student.school);
     setColor(student.color);
     setAvatarChar(student.avatarChar);
-    setStatus(student.status);
+    setStatus(student.status === "active" ? "active" : "inactive");
     setStartDate(monthFromStartDate(student.startDate));
     setTotalSessions(String(student.totalSessions));
     setHwCompletionRate(String(student.hwCompletionRate));

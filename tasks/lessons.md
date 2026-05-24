@@ -1,0 +1,8 @@
+- 기능 구현 범위를 말할 때는 "완료된 것"과 "아직 안 된 것"을 분리해서 표현한다. 특히 사용자가 요청한 핵심 기능(예: 스크롤 전환)과 선행 작업(예: 데이터 조회/표시)을 혼동해서 완료처럼 말하지 않는다.
+- `next-auth/react`의 `useSession()`이나 `signIn()`처럼 클라이언트 세션 컨텍스트에 의존하는 훅/API를 도입할 때는 루트 또는 해당 화면 범위가 `SessionProvider`로 감싸져 있는지 같이 확인한다.
+- Auth middleware에서 DB를 볼 수 없는 JWT claim만으로 영구적인 role 판정을 강제하지 않는다. role처럼 DB에 저장된 권한은 stale cookie 가능성을 고려해 서버/API에서 DB 기준으로 한 번 더 판정한다.
+- 파일 변경을 말했다면 반드시 실제 파일 내용을 다시 읽어 변경이 반영됐는지 확인한다. 작업 기록이나 의도만 업데이트된 상태를 완료로 말하지 않는다.
+- OAuth provider를 추가할 때는 버튼만 붙이지 말고 `.env` 변수명이 provider가 실제로 읽는 이름과 일치하는지 확인한다. 기존 프로젝트 변수명이 다르면 provider 설정에서 명시적으로 fallback을 둔다.
+- `public/` 아래 이미지를 인증 전 화면에서 쓰면 middleware matcher가 해당 public asset 경로를 보호 라우트로 리다이렉트하지 않는지 반드시 확인한다.
+- OAuth scope나 consent 항목을 나중에 추가하면 기존 DB row와 기존 access token은 자동으로 보강되지 않는다. 새 scope 요청과 재로그인, 기존 유저 profile 동기화 callback까지 같이 확인한다.
+- Auth.js provider의 `authorization`을 object로 override할 때는 `params`만 넣지 말고 provider의 authorize `url`도 함께 명시한다. 기본 string 설정이 통째로 대체되어 `Invalid URL`이 날 수 있다.

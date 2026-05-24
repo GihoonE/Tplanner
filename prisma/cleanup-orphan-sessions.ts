@@ -22,7 +22,7 @@ async function main() {
     (await prisma.student.findMany({ select: { id: true } })).map((s) => s.id),
   );
 
-  const withStudentId = await prisma.session.findMany({
+  const withStudentId = await prisma.lessonSession.findMany({
     where: { studentId: { not: null } },
     select: { id: true, studentId: true },
   });
@@ -31,7 +31,7 @@ async function main() {
   );
 
   const nullSessions = includeNull
-    ? await prisma.session.findMany({
+    ? await prisma.lessonSession.findMany({
         where: { studentId: null },
         select: { id: true },
       })
@@ -60,12 +60,12 @@ async function main() {
 
   const idsMissing = missingStudent.map((s) => s.id);
   if (idsMissing.length > 0) {
-    const r = await prisma.session.deleteMany({ where: { id: { in: idsMissing } } });
+    const r = await prisma.lessonSession.deleteMany({ where: { id: { in: idsMissing } } });
     console.log(`\n삭제됨 (존재하지 않는 학생 참조): ${r.count}건`);
   }
 
   if (includeNull && nullSessions.length > 0) {
-    const r = await prisma.session.deleteMany({ where: { studentId: null } });
+    const r = await prisma.lessonSession.deleteMany({ where: { studentId: null } });
     console.log(`삭제됨 (studentId NULL): ${r.count}건`);
   }
 

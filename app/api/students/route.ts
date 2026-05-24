@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
+import {
+  requireInstructor,
+  requireViewer,
+  studentAccessWhere,
+} from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import {
   isValidStudentColor,
   normalizeStoredStudentColor,
 } from "@/lib/studentColor";
+
+function normalizeStudentStatus(status: unknown) {
+  return status === "active" ? "active" : "inactive";
+}
+
+function isValidStudentStatus(status: unknown) {
+  return status === "active" || status === "inactive";
+}
 
 /**
  * GET /api/students
@@ -11,7 +24,11 @@ import {
  */
 export async function GET() {
   try {
+    const viewer = await requireViewer();
+    if (viewer.response) return viewer.response;
+
     const students = await prisma.student.findMany({
+      where: studentAccessWhere(viewer),
       orderBy: { id: "asc" },
       include: {
         // session 테이블을 조회해서 같이 가져오자
@@ -19,6 +36,26 @@ export async function GET() {
           // session의 start column만 가져옴
           select: { start: true, notes: true },
           orderBy: { start: "desc" },
+        },
+        parentLinks: {
+          select: {
+            linkedAt: true,
+            parent: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { linkedAt: "asc" },
+        },
+        instructor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
       },
     });
@@ -43,7 +80,7 @@ export async function GET() {
           school: s.school,
           color: s.color,
           avatarChar: s.avatarChar,
-          status: s.status as "active" | "warning" | "inactive",
+          status: normalizeStudentStatus(s.status),
           startDate: s.startDate,
           totalSessions: s.totalSessions,
           hwCompletionRate: s.hwCompletionRate,
@@ -51,6 +88,19 @@ export async function GET() {
           lastSessionAt: lastSession?.start.toISOString() ?? null,
           lastSessionContent: lastSession?.notes ?? null,
           thisMonthSessionCount: thisMonthCount,
+          parents: s.parentLinks.map((link) => ({
+            id: link.parent.id,
+            name: link.parent.name,
+            email: link.parent.email,
+            linkedAt: link.linkedAt.toISOString(),
+          })),
+          instructor: s.instructor
+            ? {
+                id: s.instructor.id,
+                name: s.instructor.name,
+                email: s.instructor.email,
+              }
+            : null,
         };
       }),
     );
@@ -65,6 +115,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     // 요청 바디에서 학생 정보 추출
     const {
       name,
@@ -87,6 +140,13 @@ export async function POST(request: Request) {
       );
     }
     const storedColor = normalizeStoredStudentColor(rawColor);
+    const storedStatus = status ?? "active";
+    if (!isValidStudentStatus(storedStatus)) {
+      return NextResponse.json(
+        { error: "상태는 active 또는 inactive여야 합니다." },
+        { status: 400 },
+      );
+    }
 
     // 학생 정보를 데이터베이스에 저장
     const student = await prisma.student.create({
@@ -97,10 +157,11 @@ export async function POST(request: Request) {
         school,
         color: storedColor,
         avatarChar,
-        status,
+        status: storedStatus,
         startDate,
         totalSessions,
         hwCompletionRate,
+        instructorId: instructor.userId,
       },
     });
     return NextResponse.json(student);

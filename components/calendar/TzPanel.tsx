@@ -1,23 +1,33 @@
 "use client";
 
-import { useTutorStore, useTzData, useNow } from "@/store";
+import { useTutorStore, useTzData } from "@/store";
 import { TZ_CATALOG } from "@/lib/constants";
 import { nowInTz } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const tzData       = useTzData();
-  const now          = useNow();
   const setPrimary   = useTutorStore((s) => s.setPrimaryTz);
   const toggleExtra  = useTutorStore((s) => s.toggleExtraTz);
   const addExtra     = useTutorStore((s) => s.addExtraTz);
   const removeExtra  = useTutorStore((s) => s.removeExtraTz);
 
+  const [now, setNow] = useState(() => new Date());
   const [addSel, setAddSel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const primary  = tzData[0];
   const extras   = tzData.slice(1);
   const addable  = TZ_CATALOG.filter((c) => !tzData.find((t) => t.id === c.id));
+
+  useEffect(() => {
+    if (!open) return;
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
 
   return (
     <div
@@ -60,7 +70,41 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
           <div className="text-[11px] font-semibold text-slate-400 mb-1.5">기본 시간대 변경</div>
           <select
             value={primary.id}
-            onChange={(e) => setPrimary(e.target.value)}
+            disabled={saving}
+            onChange={async (e) => {
+              const nextId = e.target.value;
+              const next = TZ_CATALOG.find((c) => c.id === nextId);
+              const previousId = primary.id;
+              if (!next) return;
+
+              setError(null);
+              setSaving(true);
+              setPrimary(nextId);
+              try {
+                const res = await fetch("/api/preferences", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ primaryTimezone: next.timeZone }),
+                });
+                if (!res.ok) {
+                  const body = await res.json().catch(() => ({}));
+                  throw new Error(
+                    typeof body.error === "string"
+                      ? body.error
+                      : "타임존 저장에 실패했습니다.",
+                  );
+                }
+              } catch (e) {
+                setPrimary(previousId);
+                setError(
+                  e instanceof Error
+                    ? e.message
+                    : "타임존 저장에 실패했습니다.",
+                );
+              } finally {
+                setSaving(false);
+              }
+            }}
             className="w-full text-[13px] px-3 py-2 border border-slate-200 rounded-xl bg-white text-slate-800 outline-none cursor-pointer hover:border-sky-300 transition-colors"
           >
             {TZ_CATALOG.map((c) => (
@@ -69,6 +113,11 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
               </option>
             ))}
           </select>
+          {error && (
+            <p className="mt-2 text-[11px] font-semibold text-red-500">
+              {error}
+            </p>
+          )}
         </div>
 
         {/* Extra TZs */}

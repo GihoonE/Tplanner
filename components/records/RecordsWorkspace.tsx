@@ -1,12 +1,21 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { RecordList } from "@/components/records/RecordList";
 import { RecordEditor } from "@/components/records/RecordEditor";
 import { NewSessionRecordModal } from "@/components/records/NewSessionRecordModal";
 import type { Session, Student, Understanding, Focus } from "@/types";
 
 export function RecordsWorkspace() {
+  const { data: authSession } = useSession();
+  const readOnly = authSession?.user?.role === "parent";
+  const searchParams = useSearchParams();
+  const initialSessionId = Number(searchParams.get("session"));
+  const initialStudentSearch =
+    Number.isSafeInteger(initialSessionId) ? "" : (searchParams.get("student") ?? "");
+
   const [sessions, setSessions] = useState<Session[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -77,10 +86,16 @@ export function RecordsWorkspace() {
     if (loadState !== "ready") return;
     setActiveId((aid) => {
       if (sessions.length === 0) return null;
+      if (
+        Number.isSafeInteger(initialSessionId) &&
+        sessions.some((s) => s.id === initialSessionId)
+      ) {
+        return initialSessionId;
+      }
       if (aid !== null && sessions.some((s) => s.id === aid)) return aid;
       return sessions[0].id;
     });
-  }, [loadState, sessions]);
+  }, [initialSessionId, loadState, sessions]);
 
   const onSessionChange = useCallback((next: Session) => {
     setSessions((prev) => prev.map((s) => (s.id === next.id ? next : s)));
@@ -119,14 +134,16 @@ export function RecordsWorkspace() {
         <span className="flex-1 text-[15px] font-extrabold tracking-tight text-slate-900">
           수업 기록
         </span>
-        <button
-          type="button"
-          disabled={loadState !== "ready"}
-          onClick={() => setNewSessionOpen(true)}
-          className="rounded-xl bg-sky-500 px-4 py-2 text-[13px] font-bold text-white shadow-[0_2px_8px_rgba(14,165,233,.3)] transition-colors hover:bg-sky-600 disabled:pointer-events-none disabled:opacity-50"
-        >
-          + 새 기록
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            disabled={loadState !== "ready"}
+            onClick={() => setNewSessionOpen(true)}
+            className="rounded-xl bg-sky-500 px-4 py-2 text-[13px] font-bold text-white shadow-[0_2px_8px_rgba(16,67,109,.3)] transition-colors hover:bg-sky-600 disabled:pointer-events-none disabled:opacity-50"
+          >
+            + 새 기록
+          </button>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -137,21 +154,25 @@ export function RecordsWorkspace() {
           onSelect={setActiveId}
           loading={loadState === "loading"}
           error={loadState === "error" ? loadError : null}
+          initialSearch={initialStudentSearch}
         />
         <RecordEditor
           session={activeSession}
           student={activeStudent}
           onSessionChange={onSessionChange}
           onDeleted={onDeleted}
+          readOnly={readOnly}
         />
       </div>
 
-      <NewSessionRecordModal
-        open={newSessionOpen}
-        onClose={() => setNewSessionOpen(false)}
-        students={students}
-        onCreated={onSessionCreated}
-      />
+      {!readOnly && (
+        <NewSessionRecordModal
+          open={newSessionOpen}
+          onClose={() => setNewSessionOpen(false)}
+          students={students}
+          onCreated={onSessionCreated}
+        />
+      )}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export type Understanding = "good" | "normal" | "hard" | "";
 export type Focus = "high" | "normal" | "low" | "";
 export type SessionStatus = "upcoming" | "ongoing" | "completed";
 export type ReportStatus = "draft" | "sent";
-export type StudentStatus = "active" | "warning" | "inactive";
+export type StudentStatus = "active" | "inactive";
 
 // ── Student ──────────────────────────────
 export interface Student {
@@ -40,6 +40,17 @@ export interface Student {
   /** API에서만 반환: 이번 달 수업 수 */
   thisMonthSessionCount?: number;
   lastSessionContent?: string | null;
+  parents?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    linkedAt: string;
+  }[];
+  instructor?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  } | null;
 }
 
 // ── Homework item ─────────────────────────
@@ -66,14 +77,17 @@ export interface Session {
 export interface Report {
   id: number;
   studentId: number;
-  month: string; // "2025-03"
+  title: string;
   status: ReportStatus;
-  score: number; // 0–100
+  periodStart: string | null;
+  periodEnd: string | null;
   summary: string;
   strengths: string;
   improvements: string;
   nextPlan: string;
-  createdAt: Date;
+  sessionIds: number[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ── Timezone entry ────────────────────────
@@ -81,6 +95,7 @@ export interface TzEntry {
   id: string; // "KST"
   name: string; // "서울"
   label: string; // "KST"
+  timeZone: string; // "Asia/Seoul"
   offset: number; // UTC offset in hours (e.g. 9, -5)
   display: string; // "+09:00"
   on: boolean;

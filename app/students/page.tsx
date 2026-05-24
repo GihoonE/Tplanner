@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -15,12 +16,10 @@ const STATUS_BADGE: Record<
   React.ComponentProps<typeof Badge>["variant"]
 > = {
   active: "green",
-  warning: "amber",
   inactive: "gray",
 };
 const STATUS_LABEL: Record<string, string> = {
   active: "활성",
-  warning: "주의",
   inactive: "휴식중",
 };
 
@@ -70,8 +69,7 @@ function compareStudents(
   }
   const order: Record<string, number> = {
     active: 0,
-    warning: 1,
-    inactive: 2,
+    inactive: 1,
   };
   const va = order[a.status] ?? 99;
   const vb = order[b.status] ?? 99;
@@ -143,8 +141,22 @@ function SortHeader({
   );
 }
 
+function recordsPathForStudent(student: Student) {
+  return `/records?student=${encodeURIComponent(student.name)}`;
+}
+
+function getDefaultSelectedStudent(students: Student[]) {
+  return [...students].sort((a, b) => {
+    const statusCompare = compareStudents(a, b, "status", "asc");
+    if (statusCompare !== 0) return statusCompare;
+    return compareStudents(a, b, "name", "asc");
+  })[0];
+}
+
 export default function StudentsPage() {
   const router = useRouter();
+  const { data: authSession } = useSession();
+  const readOnly = authSession?.user?.role === "parent";
   // ── API에서 가져오는 데이터 ─────────────────────────────────────────────
   // state는 변수랑 달리 값이 바뀌면 React가 감지해 렌더링을 다시 해줌.
   const [students, setStudents] = useState<Student[]>([]);
@@ -162,8 +174,15 @@ export default function StudentsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
-  const [sortKey, setSortKey] = useState<StudentSortKey | null>(null);
+  const [sortKey, setSortKey] = useState<StudentSortKey | null>("status");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [inviteCodeByStudent, setInviteCodeByStudent] = useState<
+    Record<number, string>
+  >({});
+  const [inviteLoadingId, setInviteLoadingId] = useState<number | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -174,8 +193,9 @@ export default function StudentsPage() {
         if (!res.ok) throw new Error("학생 조회 실패");
         const data = await res.json();
         setStudents(data);
-        if (data.length > 0 && selectedId === null) {
-          setSelectedId(data[0].id);
+        const defaultStudent = getDefaultSelectedStudent(data);
+        if (defaultStudent && selectedId === null) {
+          setSelectedId(defaultStudent.id);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
@@ -192,9 +212,14 @@ export default function StudentsPage() {
       return;
     }
     if (selectedId !== null && !students.some((s) => s.id === selectedId)) {
-      setSelectedId(students[0].id);
+      setSelectedId(getDefaultSelectedStudent(students)?.id ?? null);
     }
   }, [students, selectedId]);
+
+  useEffect(() => {
+    setInviteError(null);
+    setUnlinkError(null);
+  }, [selectedId]);
 
   // useEffect -> 화면 그린 다음에 실행되는 코드. 즉 렌더링 이후에 실행되는 것으로
   // UI 작업을 제외한 것을 이 함수로 실행.
@@ -216,6 +241,64 @@ export default function StudentsPage() {
 
   const selected = students.find((s) => s.id === selectedId);
 
+  async function createInvitation(student: Student) {
+    setInviteLoadingId(student.id);
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/students/${student.id}/invitations`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => null)) as {
+        code?: string;
+        error?: string;
+      } | null;
+
+      if (!res.ok || !data?.code) {
+        throw new Error(data?.error ?? "초대 코드 생성에 실패했습니다.");
+      }
+
+      const code = data.code;
+      setInviteCodeByStudent((prev) => ({
+        ...prev,
+        [student.id]: code,
+      }));
+    } catch (e) {
+      setInviteError(
+        e instanceof Error ? e.message : "초대 코드 생성에 실패했습니다.",
+      );
+    } finally {
+      setInviteLoadingId(null);
+    }
+  }
+
+  async function unlinkStudent(student: Student) {
+    const confirmed = window.confirm(
+      `${student.name} 학생 연결을 해제할까요? 연결을 해제하면 학부모 계정에서 더 이상 이 학생을 볼 수 없습니다.`,
+    );
+    if (!confirmed) return;
+
+    setUnlinkingId(student.id);
+    setUnlinkError(null);
+    try {
+      const res = await fetch(`/api/parent/students/${student.id}`, {
+        method: "DELETE",
+      });
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        throw new Error(data?.error ?? "학생 연결 해제에 실패했습니다.");
+      }
+      setStudents((prev) => prev.filter((item) => item.id !== student.id));
+    } catch (e) {
+      setUnlinkError(
+        e instanceof Error ? e.message : "학생 연결 해제에 실패했습니다.",
+      );
+    } finally {
+      setUnlinkingId(null);
+    }
+  }
+
   return (
     <AppShell>
       {/* Topbar */}
@@ -223,9 +306,11 @@ export default function StudentsPage() {
         <span className="text-[15px] font-extrabold text-slate-900 tracking-tight flex-1">
           학생 관리
         </span>
-        <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
-          + 학생 추가
-        </Button>
+        {!readOnly && (
+          <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
+            + 학생 추가
+          </Button>
+        )}
       </div>
 
       <AddStudentModal
@@ -456,18 +541,20 @@ export default function StudentsPage() {
                         </div>
                       </div>
                       <div className="flex min-w-0 w-full items-center justify-center">
-                        <Button
-                          type="button"
-                          variant="soft"
-                          size="sm"
-                          className="shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditStudent(stu);
-                          }}
-                        >
-                          변경
-                        </Button>
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            variant="soft"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditStudent(stu);
+                            }}
+                          >
+                            변경
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -518,9 +605,95 @@ export default function StudentsPage() {
               </div>
               <div className="mb-2.5">
                 <div className="flex justify-between text-[12px] mb-1">
-                  {selected.lastSessionContent}
+                  {selected.lastSessionContent || "최근 수업 기록이 없습니다."}
                 </div>
               </div>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-slate-100 bg-white p-3">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                {readOnly ? "학생 연결" : "학부모 연결"}
+              </div>
+              {readOnly ? (
+                <div>
+                  <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-[12px] font-medium leading-5 text-slate-500">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      담당 선생님
+                    </div>
+                    <div className="mt-1 text-[13px] font-extrabold text-slate-900">
+                      {selected.instructor?.name ||
+                        selected.instructor?.email ||
+                        "담당 선생님 정보 없음"}
+                    </div>
+                    {selected.instructor?.email && (
+                      <div className="mt-0.5 truncate text-[11px] text-slate-400">
+                        {selected.instructor.email}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="w-full justify-center"
+                    disabled={unlinkingId === selected.id}
+                    onClick={() => unlinkStudent(selected)}
+                  >
+                    {unlinkingId === selected.id ? "해제 중..." : "연결 해제"}
+                  </Button>
+                  {unlinkError && (
+                    <div className="mt-2 text-[11px] font-semibold leading-4 text-red-500">
+                      {unlinkError}
+                    </div>
+                  )}
+                </div>
+              ) : selected.parents && selected.parents.length > 0 ? (
+                <div className="space-y-2">
+                  {selected.parents.map((parent) => (
+                    <div
+                      key={parent.id}
+                      className="rounded-lg bg-sky-50 px-3 py-2"
+                    >
+                      <div className="text-[13px] font-extrabold text-slate-900">
+                        {parent.name || parent.email || "이름 없는 학부모"}
+                      </div>
+                      {parent.email && (
+                        <div className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
+                          {parent.email}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center"
+                    onClick={() => createInvitation(selected)}
+                    disabled={inviteLoadingId === selected.id}
+                  >
+                    {inviteLoadingId === selected.id
+                      ? "생성 중..."
+                      : "초대코드 생성"}
+                  </Button>
+                  {inviteCodeByStudent[selected.id] && (
+                    <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-center">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-amber-600">
+                        24시간 유효
+                      </div>
+                      <div className="mt-0.5 text-[16px] font-black tracking-[0.18em] text-slate-900">
+                        {inviteCodeByStudent[selected.id]}
+                      </div>
+                    </div>
+                  )}
+                  {inviteError && (
+                    <div className="mt-2 text-[11px] font-semibold leading-4 text-red-500">
+                      {inviteError}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-1.5">
@@ -528,7 +701,7 @@ export default function StudentsPage() {
                 variant="primary"
                 size="sm"
                 className="flex-1"
-                onClick={() => router.push("/records")}
+                onClick={() => router.push(recordsPathForStudent(selected))}
               >
                 수업 기록
               </Button>

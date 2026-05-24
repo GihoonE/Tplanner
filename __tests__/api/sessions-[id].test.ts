@@ -10,7 +10,7 @@ describe("GET /api/sessions/[id]", () => {
 
   beforeEach(async () => {
     await prisma.homeworkItem.deleteMany();
-    await prisma.session.deleteMany();
+    await prisma.lessonSession.deleteMany();
     await prisma.student.deleteMany();
 
     const student = await prisma.student.create({
@@ -28,7 +28,7 @@ describe("GET /api/sessions/[id]", () => {
       },
     });
 
-    const session = await prisma.session.create({
+    const session = await prisma.lessonSession.create({
       data: {
         studentId: student.id,
         start: new Date("2025-03-20T09:00:00"),
@@ -66,7 +66,7 @@ describe("PATCH /api/sessions/[id]", () => {
 
   beforeEach(async () => {
     await prisma.homeworkItem.deleteMany();
-    await prisma.session.deleteMany();
+    await prisma.lessonSession.deleteMany();
     await prisma.student.deleteMany();
 
     const student = await prisma.student.create({
@@ -84,7 +84,7 @@ describe("PATCH /api/sessions/[id]", () => {
       },
     });
 
-    const session = await prisma.session.create({
+    const session = await prisma.lessonSession.create({
       data: {
         studentId: student.id,
         start: new Date("2025-03-20T09:00:00"),
@@ -144,7 +144,7 @@ describe("DELETE /api/sessions/[id]", () => {
 
   beforeEach(async () => {
     await prisma.homeworkItem.deleteMany();
-    await prisma.session.deleteMany();
+    await prisma.lessonSession.deleteMany();
     await prisma.student.deleteMany();
 
     const student = await prisma.student.create({
@@ -162,7 +162,7 @@ describe("DELETE /api/sessions/[id]", () => {
       },
     });
 
-    const session = await prisma.session.create({
+    const session = await prisma.lessonSession.create({
       data: {
         studentId: student.id,
         start: new Date("2025-03-20T09:00:00"),
@@ -180,7 +180,7 @@ describe("DELETE /api/sessions/[id]", () => {
     expect(status).toBe(200);
     expect(data.id).toBe(sessionId);
 
-    const found = await prisma.session.findUnique({ where: { id: sessionId } });
+    const found = await prisma.lessonSession.findUnique({ where: { id: sessionId } });
     expect(found).toBeNull();
   });
 

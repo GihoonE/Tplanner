@@ -1,18 +1,30 @@
 import { NextResponse, NextRequest } from "next/server";
+import { requireInstructor } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import {
   isValidStudentColor,
   normalizeStoredStudentColor,
 } from "@/lib/studentColor";
 
+function normalizeStudentStatus(status: unknown) {
+  return status === "active" ? "active" : "inactive";
+}
+
+function isValidStudentStatus(status: unknown) {
+  return status === "active" || status === "inactive";
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const { id } = params;
-    const student = await prisma.student.findUnique({
-      where: { id: parseInt(id, 10) },
+    const student = await prisma.student.findFirst({
+      where: { id: parseInt(id, 10), instructorId: instructor.userId },
       include: {
         sessions: {
           include: { homework: true },
@@ -28,7 +40,11 @@ export async function GET(
     }
 
     const { sessions, ...rest } = student;
-    return NextResponse.json({ ...rest, sessions });
+    return NextResponse.json({
+      ...rest,
+      status: normalizeStudentStatus(rest.status),
+      sessions,
+    });
   } catch (e) {
     console.error("[GET] /api/students/[id]", e);
     return NextResponse.json(
@@ -43,10 +59,13 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const numId = parseInt(params.id, 10);
     const body = await _req.json();
-    const student = await prisma.student.findUnique({
-      where: { id: numId },
+    const student = await prisma.student.findFirst({
+      where: { id: numId, instructorId: instructor.userId },
     });
     if (!student) {
       return NextResponse.json(
@@ -75,6 +94,12 @@ export async function PATCH(
         );
       }
     }
+    if (status != null && !isValidStudentStatus(status)) {
+      return NextResponse.json(
+        { error: "상태는 active 또는 inactive여야 합니다." },
+        { status: 400 },
+      );
+    }
 
     const updated = await prisma.student.update({
       where: { id: numId },
@@ -95,7 +120,10 @@ export async function PATCH(
         }),
       },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json({
+      ...updated,
+      status: normalizeStudentStatus(updated.status),
+    });
   } catch (e) {
     console.error("[PATCH] /api/students/[id]", e);
     return NextResponse.json(
@@ -110,6 +138,9 @@ export async function DELETE(
   { params }: { params: { id: string } },
 ) {
   try {
+    const instructor = await requireInstructor();
+    if (instructor.response) return instructor.response;
+
     const existing = await prisma.student.findUnique({
       where: { id: parseInt(params.id, 10) },
       include: {
@@ -119,7 +150,7 @@ export async function DELETE(
         },
       },
     });
-    if (!existing) {
+    if (!existing || existing.instructorId !== instructor.userId) {
       return NextResponse.json(
         { error: "학생을 찾을 수 없습니다" },
         { status: 404 },
@@ -129,7 +160,11 @@ export async function DELETE(
     const { sessions, ...rest } = existing;
     await prisma.student.delete({ where: { id: parseInt(params.id, 10) } });
 
-    return NextResponse.json({ ...rest, sessions });
+    return NextResponse.json({
+      ...rest,
+      status: normalizeStudentStatus(rest.status),
+      sessions,
+    });
   } catch (e) {
     console.error("[DELETE] /api/students/[id]", e);
     return NextResponse.json(

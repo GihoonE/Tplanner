@@ -5,7 +5,7 @@ import { useTutorStore } from "@/store";
 import { visibleSlice, topPxForDate, heightPxForDuration, fmtTz } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { HOUR_HEIGHT_PX } from "@/lib/constants";
-import { resolveSessionSurfaceStyle } from "@/lib/studentColor";
+import { resolveAvatarBg } from "@/lib/studentColor";
 import type { Session, Student } from "@/types";
 
 interface SessionBlockProps {
@@ -15,6 +15,7 @@ interface SessionBlockProps {
   primaryOffset: number;
   isPast: boolean;
   isNow: boolean;
+  hourHeightPx?: number;
   onMouseDown: (e: React.MouseEvent) => void;
   onResizeMouseDown: (e: React.MouseEvent) => void;
   onClick: (e: React.MouseEvent) => void;
@@ -29,6 +30,7 @@ export function SessionBlock({
   primaryOffset,
   isPast,
   isNow,
+  hourHeightPx,
   onMouseDown,
   onResizeMouseDown,
   onClick,
@@ -38,10 +40,19 @@ export function SessionBlock({
 
   const { visStart, visEnd, fromPrev, toNext } = slice;
 
-  const topPx = topPxForDate(visStart, primaryOffset);
-  const hPx   = Math.max(heightPxForDuration(visStart.getTime(), visEnd.getTime()), 24);
+  const topPx = topPxForDate(visStart, primaryOffset, hourHeightPx);
+  const hPx   = Math.max(
+    heightPxForDuration(visStart.getTime(), visEnd.getTime(), hourHeightPx),
+    20,
+  );
 
-  const surface = student ? resolveSessionSurfaceStyle(student.color) : null;
+  const surface = student
+    ? {
+        background: resolveAvatarBg(student.color),
+        color: "#fff",
+        border: "1px solid rgba(255,255,255,.55)",
+      }
+    : null;
   const r = `${fromPrev ? "3px" : "8px"} ${fromPrev ? "3px" : "8px"} ${toNext ? "3px" : "8px"} ${toNext ? "3px" : "8px"}`;
 
   return (
@@ -52,7 +63,7 @@ export function SessionBlock({
         height:       hPx,
         borderRadius: r,
         opacity:      isPast ? 0.45 : 1,
-        boxShadow:    isNow ? "0 0 0 2px #0ea5e9, 0 0 0 4px rgba(14,165,233,.2)" : undefined,
+        boxShadow:    isNow ? "0 0 0 2px #164b7a, 0 0 0 4px rgba(16,67,109,.2)" : undefined,
         ...(surface ?? {}),
       }}
       data-id={session.id}
@@ -65,14 +76,19 @@ export function SessionBlock({
       )}
 
       {/* Content */}
-      <div className="px-2 pt-[5px] pb-1 relative">
-        {fromPrev && <div className="text-[9px] font-bold opacity-65 mb-0.5">↑ {fmtTz(session.start, primaryOffset)} 시작</div>}
-        {student && <div className="text-[9px] font-bold uppercase tracking-wide opacity-70 leading-none">{student.subject}</div>}
-        {hPx > 34 && student && <div className="text-[12px] font-bold mt-0.5 leading-tight">{student.name}</div>}
-        {hPx > 52 && <div className="text-[10px] font-medium mt-0.5 opacity-75">{fmtTz(session.start, primaryOffset)}–{fmtTz(session.end, primaryOffset)}</div>}
-        {toNext   && <div className="text-[9px] font-bold opacity-65 mt-0.5">↓ {fmtTz(session.end, primaryOffset)} 종료 (익일)</div>}
+      <div className="px-2 pt-1 pb-1 relative">
+        {fromPrev && <div className="text-[9px] font-bold opacity-75 mb-0.5">↑ {fmtTz(session.start, primaryOffset)} 시작</div>}
+        <div className="truncate text-[11px] font-extrabold leading-tight drop-shadow-sm">
+          {fmtTz(session.start, primaryOffset)} ~ {fmtTz(session.end, primaryOffset)} {student?.name ?? "수업"}
+        </div>
+        {hPx > 40 && student && (
+          <div className="mt-0.5 truncate text-[10px] font-semibold leading-tight opacity-85">
+            {student.subject}
+          </div>
+        )}
+        {toNext   && <div className="text-[9px] font-bold opacity-75 mt-0.5">↓ {fmtTz(session.end, primaryOffset)} 종료 (익일)</div>}
         {session.notes && (
-          <span className="absolute top-[5px] right-[7px] text-[10px] opacity-70">✏</span>
+          <span className="absolute top-1 right-[7px] text-[10px] opacity-70">✏</span>
         )}
       </div>
 

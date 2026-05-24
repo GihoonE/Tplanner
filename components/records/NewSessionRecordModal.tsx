@@ -69,6 +69,8 @@ type NewSessionRecordModalProps = {
   onClose: () => void;
   students: Student[];
   onCreated: (session: Session) => void;
+  initialStart?: Date | null;
+  initialEnd?: Date | null;
 };
 
 export function NewSessionRecordModal({
@@ -76,6 +78,8 @@ export function NewSessionRecordModal({
   onClose,
   students,
   onCreated,
+  initialStart,
+  initialEnd,
 }: NewSessionRecordModalProps) {
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
@@ -95,7 +99,9 @@ export function NewSessionRecordModal({
 
   useEffect(() => {
     if (!open) return;
-    const [s, e] = defaultStartEnd();
+    const [defaultStart, defaultEnd] = defaultStartEnd();
+    const s = initialStart ? new Date(initialStart) : defaultStart;
+    const e = initialEnd ? new Date(initialEnd) : defaultEnd;
     setStart(s);
     setEnd(e);
     setStudentId("");
@@ -107,7 +113,7 @@ export function NewSessionRecordModal({
     setHwInput("");
     setError(null);
     setSaving(false);
-  }, [open, students]);
+  }, [initialEnd, initialStart, open, students]);
 
   const student =
     studentId === "" ? undefined : students.find((x) => x.id === studentId);

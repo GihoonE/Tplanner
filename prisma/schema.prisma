@@ -18,17 +18,22 @@ model Student {
   school           String
   color            String // s-blue, s-teal, etc.
   avatarChar       String
-  status           String // active, warning, inactive
+  status           String // active, inactive
   startDate        String // "2024-09"
   totalSessions    Int    @default(0)
   hwCompletionRate Int    @default(0)
-  sessions         Session[]
+  instructorId     String?
+  instructor       User?  @relation("InstructorStudents", fields: [instructorId], references: [id])
+  sessions         LessonSession[]
+  reports          Report[]
+  parentLinks      StudentParent[]
+  invitations      StudentInvitation[]
 }
 
 
 // FK studentId references student(id)
 // 그러나 @relation은 참조하는 왜래키 컬럼이 아니라 관계있는 필드와 연결지어준다
-model Session {
+model LessonSession {
   id           Int       @id @default(autoincrement())
   studentId    Int?
   student      Student?  @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -39,12 +44,124 @@ model Session {
   understanding String   @default("") // good, normal, hard
   focus        String    @default("") // high, normal, low
   homework     HomeworkItem[]
+  reportSessions ReportSession[]
+
+  @@map("Session")
 }
 
 model HomeworkItem {
   id        Int     @id @default(autoincrement())
   sessionId Int
-  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   text      String
   done      Boolean @default(false)
+}
+
+model Report {
+  id           Int             @id @default(autoincrement())
+  studentId    Int
+  student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title        String
+  status       String          @default("draft") // draft, sent
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  summary      String          @default("")
+  strengths    String          @default("")
+  improvements String          @default("")
+  nextPlan     String          @default("")
+  sessions     ReportSession[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model ReportSession {
+  reportId  Int
+  sessionId Int
+  report    Report  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  session   LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([reportId, sessionId])
+}
+
+model AppPreference {
+  id              Int      @id @default(1)
+  primaryTimezone String   @default("Asia/Seoul")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          String?   // instructor, parent
+  accounts      Account[]
+  sessions      Session[]
+  students      Student[] @relation("InstructorStudents")
+  parentLinks   StudentParent[]
+  invitations   StudentInvitation[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("AuthSession")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model StudentParent {
+  studentId Int
+  parentId  String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent    User     @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  linkedAt  DateTime @default(now())
+
+  @@id([studentId, parentId])
+}
+
+model StudentInvitation {
+  id           Int       @id @default(autoincrement())
+  studentId    Int
+  instructorId String
+  codeHash     String    @unique
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  instructor   User      @relation(fields: [instructorId], references: [id], onDelete: Cascade)
 }
