@@ -1,9 +1,56 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+const WWW_HOST = "www.tplanner.co.kr";
+const CANONICAL_HOST = "tplanner.co.kr";
+
+function normalizeUrl(url: URL) {
+  const normalized = new URL(url);
+  let changed = false;
+
+  if (normalized.hostname === WWW_HOST) {
+    normalized.hostname = CANONICAL_HOST;
+    changed = true;
+  }
+
+  const callbackUrl = normalized.searchParams.get("callbackUrl");
+  if (callbackUrl) {
+    try {
+      const normalizedCallback = new URL(callbackUrl);
+      if (normalizedCallback.hostname === WWW_HOST) {
+        normalizedCallback.hostname = CANONICAL_HOST;
+        normalized.searchParams.set("callbackUrl", normalizedCallback.toString());
+        changed = true;
+      }
+    } catch {
+      normalized.searchParams.delete("callbackUrl");
+      changed = true;
+    }
+  }
+
+  return changed ? normalized : null;
+}
+
+function isPublicPath(pathname: string) {
+  return (
+    pathname === "/login" ||
+    pathname === "/privacy" ||
+    pathname.startsWith("/docs/")
+  );
+}
+
 export async function middleware(request: NextRequest) {
   // 현재 주소 가져오기 (e.g. "/dashboard")
   const { pathname } = request.nextUrl;
+
+  const normalizedUrl = normalizeUrl(request.nextUrl);
+  if (normalizedUrl) {
+    return NextResponse.redirect(normalizedUrl);
+  }
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
 
   // 현재 요청의 토큰 가져오기
   const token = await getToken({
@@ -43,6 +90,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|api/me/role|_next/static|_next/image|favicon.ico|images|docs|login|privacy).*)",
+    "/((?!api/auth|api/me/role|_next/static|_next/image|favicon.ico|images).*)",
   ],
 };
