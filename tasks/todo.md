@@ -1,3 +1,29 @@
+## Canonical Auth Domain
+
+- [x] Identify why `/login` keeps a `www` callbackUrl.
+- [x] Redirect `www.tplanner.co.kr` requests to `tplanner.co.kr` in middleware.
+- [x] Normalize login `callbackUrl` away from `www`.
+- [x] Verify static checks.
+
+## Review
+
+- Updated `middleware.ts` to redirect `www.tplanner.co.kr` to `tplanner.co.kr`.
+- The same middleware now normalizes `callbackUrl=https://www.tplanner.co.kr/...` to `https://tplanner.co.kr/...`.
+- `/login`, `/privacy`, and `/docs/*` remain public after canonical URL normalization.
+- `npx tsc --noEmit` passes.
+
+## OAuth Profile Sync Robustness
+
+- [x] Identify the Prisma `user.update` failure during OAuth sign-in.
+- [x] Make optional OAuth profile sync tolerant when the user row is not available yet.
+- [x] Verify static checks.
+
+## Review
+
+- Replaced optional OAuth profile `prisma.user.update` with `upsert` in `auth.ts`.
+- This keeps sign-in tolerant if profile sync runs before the expected user row exists.
+- `npx tsc --noEmit` passes.
+
 ## Neon Postgres Prisma Migration
 
 - [x] Identify the production auth error root cause.

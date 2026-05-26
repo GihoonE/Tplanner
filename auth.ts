@@ -23,15 +23,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   providers: [
-    Google,
+    Google({
+      allowDangerousEmailAccountLinking: true,
+    }),
     Kakao({
+      allowDangerousEmailAccountLinking: true,
       clientId: process.env.AUTH_KAKAO_ID ?? process.env.KAKAO_API_KEY ?? "",
       clientSecret: process.env.AUTH_KAKAO_SECRET ?? "",
       authorization: {
         url: "https://kauth.kakao.com/oauth/authorize",
-        params: {
-          scope: "profile_nickname profile_image",
-        },
+        params: { scope: "profile_nickname profile_image" },
       },
     }),
   ],
