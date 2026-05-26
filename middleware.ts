@@ -95,6 +95,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|api/me/role|_next/static|_next/image|favicon.ico|images).*)",
+    "/((?!api/auth|api/me/role|api/debug-session|_next/static|_next/image|favicon.ico|images).*)",
   ],
 };
