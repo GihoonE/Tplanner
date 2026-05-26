@@ -72,6 +72,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // role 없는 로그인 유저 → 온보딩으로
+  if (!token.role && pathname !== "/onboarding/role") {
+    return NextResponse.redirect(new URL("/onboarding/role", request.url));
+  }
+
   if (token.role && pathname === "/onboarding/role") {
     const homePath = token.role === "parent" ? "/parent" : "/dashboard";
     return NextResponse.redirect(new URL(homePath, request.url));
