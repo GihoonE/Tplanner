@@ -786,3 +786,48 @@
 - Updated the `/reports` student card grid to render `grid-cols-2` for parent/read-only users.
 - Instructor users still get the existing `grid-cols-4` layout.
 - `npx tsc --noEmit` still fails only on the existing unrelated test helper and student modal type errors.
+
+## TypeScript Build Fix
+
+- [x] Re-run `npx tsc --noEmit` and capture the current failures.
+- [x] Restore missing API test helpers.
+- [x] Replace string spread in student modals with a target-safe first-character helper.
+- [x] Narrow nullable student references in the edit modal async handlers and delete dialog.
+- [x] Verify `npx tsc --noEmit` passes.
+
+## Review
+
+- Added `__tests__/helpers.ts` with request/response helpers used by the session route tests.
+- Updated `AddStudentModal` and `EditStudentModal` to use `Array.from(t).at(0)` instead of string spread.
+- Added `currentStudent` in `EditStudentModal` so async handlers and JSX no longer reference a nullable `student`.
+- `npx tsc --noEmit` now passes.
+
+## Git Ignore And Staging Check
+
+- [x] Check currently staged files.
+- [x] Verify secrets and local DB files are not tracked.
+- [x] Expand `.gitignore` for SQLite sidecar/nested DB files.
+- [x] Re-run ignore checks and document the result.
+
+## Review
+
+- There were no staged files at the start of the check.
+- `.env`, `prisma/dev.db`, and common SQLite sidecar names are ignored.
+- Found `prisma/prisma/test.db` was already tracked by Git, which is unsafe for deployment commits.
+- Removed `prisma/prisma/test.db` from Git tracking with `git rm --cached`; the local file remains ignored.
+- Expanded `.gitignore` to cover nested Prisma DB files, `*.db-journal`, `*.sqlite`, and `*.sqlite3`.
+- Current staged change is only the deletion of tracked `prisma/prisma/test.db` from the repository index.
+
+## Production Build Fix
+
+- [x] Run `npm run build` locally.
+- [x] Fix `/records` production prerender error from `useSearchParams`.
+- [x] Mark auth-backed API routes as dynamic where build tries static rendering.
+- [x] Re-run `npm run build` and document the result.
+
+## Review
+
+- Initial `npm run build` compiled but failed while prerendering `/records` because `RecordsWorkspace` uses `useSearchParams`.
+- Wrapped `RecordsWorkspace` with `Suspense` in `app/records/page.tsx`.
+- Added `dynamic = "force-dynamic"` to `app/api/parent/students/route.ts` and `app/api/calendar/sessions/route.ts` to avoid static rendering attempts for auth-backed API routes.
+- Re-ran `npm run build`; it now passes.

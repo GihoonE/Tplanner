@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireParent } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 function isSameMonth(date: Date, now: Date) {
   return (
     date.getFullYear() === now.getFullYear() &&

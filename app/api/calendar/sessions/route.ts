@@ -5,6 +5,8 @@ import {
 } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 function parseDateParam(value: string | null, field: string) {
   if (!value) return null;
   const date = new Date(value);

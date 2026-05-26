@@ -17,7 +17,7 @@ const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
 function firstChar(s: string) {
   const t = s.trim();
   if (!t) return "?";
-  return [...t][0] ?? "?";
+  return Array.from(t).at(0) ?? "?";
 }
 
 export function AddStudentModal({

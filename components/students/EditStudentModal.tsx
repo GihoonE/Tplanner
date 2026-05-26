@@ -15,7 +15,7 @@ const STATUS_OPTS: { v: StudentStatus; label: string }[] = [
 function firstChar(s: string) {
   const t = s.trim();
   if (!t) return "?";
-  return [...t][0] ?? "?";
+  return Array.from(t).at(0) ?? "?";
 }
 
 function monthFromStartDate(s: string) {
@@ -69,6 +69,7 @@ export function EditStudentModal({
   }, [student]);
 
   if (!student) return null;
+  const currentStudent = student;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,7 +88,7 @@ export function EditStudentModal({
     setSaving(true);
     setLocalError(null);
     try {
-      const res = await fetch(`/api/students/${student.id}`, {
+      const res = await fetch(`/api/students/${currentStudent.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,7 +112,7 @@ export function EditStudentModal({
       }
       const row = data as Student;
       onSaved({
-        ...student,
+        ...currentStudent,
         ...row,
       });
       onClose();
@@ -128,7 +129,7 @@ export function EditStudentModal({
     setDeleting(true);
     setLocalError(null);
     try {
-      const res = await fetch(`/api/students/${student.id}`, {
+      const res = await fetch(`/api/students/${currentStudent.id}`, {
         method: "DELETE",
       });
       const data = await res.json().catch(() => ({}));
@@ -138,7 +139,7 @@ export function EditStudentModal({
         );
       }
       setDeleteConfirmOpen(false);
-      onDeleted(student.id);
+      onDeleted(currentStudent.id);
       onClose();
     } catch (err) {
       setLocalError(
@@ -354,7 +355,7 @@ export function EditStudentModal({
       description={
         <>
           <span className="font-semibold text-slate-800">
-            {`"${student.name}"`}
+            {`"${currentStudent.name}"`}
           </span>{" "}
           학생을 삭제할까요?
           <br />

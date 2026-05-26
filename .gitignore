@@ -8,6 +8,10 @@ node_modules
 # SQLite (로컬·테스트 DB)
 prisma/dev.db
 prisma/test.db
+prisma/**/*.db
+prisma/**/*.db-journal
+*.sqlite
+*.sqlite3
 
 # Next.js
 .next/
