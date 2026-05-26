@@ -40,6 +40,15 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
         <p className="mt-5 text-center text-[12px] font-medium leading-5 text-slate-400">
           초대 코드를 받은 학부모도 같은 계정으로 로그인한 뒤 학생 연결을 진행합니다.
         </p>
+
+        <div className="mt-3 text-center">
+          <a
+            href="/privacy"
+            className="text-[12px] font-semibold text-slate-400 underline-offset-4 transition-colors hover:text-slate-600 hover:underline"
+          >
+            개인정보처리방침
+          </a>
+        </div>
       </section>
     </main>
   );
