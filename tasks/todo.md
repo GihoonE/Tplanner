@@ -1,3 +1,56 @@
+## Neon Postgres Prisma Migration
+
+- [x] Identify the production auth error root cause.
+- [x] Switch Prisma datasource from SQLite to Postgres.
+- [x] Replace SQLite migrations with a Postgres initial migration for first deploy.
+- [x] Add deployment-friendly Prisma scripts.
+- [x] Verify Prisma schema and TypeScript checks.
+
+## Review
+
+- The production error was caused by `provider = "sqlite"` receiving a Neon `postgresql://...` `DATABASE_URL`.
+- Updated `prisma/schema.prisma` to use PostgreSQL.
+- Replaced SQLite-specific migration SQL with `20260526070000_init_postgres`.
+- Updated `migration_lock.toml` to `postgresql`.
+- Updated `package.json` so `npm run build` runs `prisma generate` first, and added `db:deploy` / `db:generate`.
+- Verified with `prisma validate`, `npx tsc --noEmit`, and `npm run build` using a Postgres-formatted URL.
+
+## Production Auth Configuration Error
+
+- [x] Inspect Auth.js provider configuration and login buttons.
+- [x] Add production host trust for custom domain OAuth redirects.
+- [x] Verify static checks.
+
+## Review
+
+- Added `trustHost: true` to `auth.ts` so Auth.js can generate OAuth URLs correctly behind the production custom domain.
+- The remaining likely causes are missing/mismatched production env vars or OAuth console callback/origin settings.
+- `npx tsc --noEmit` passes.
+
+## Login Privacy Link
+
+- [x] Add a small privacy policy link to the login page.
+- [x] Verify static checks.
+
+## Review
+
+- Added a small `개인정보처리방침` link below the login helper text in `app/login/page.tsx`.
+- The link uses `/privacy`, so it resolves to `https://www.tplanner.co.kr/privacy` in production.
+- `npx tsc --noEmit` passes.
+
+## Public Privacy Policy Page
+
+- [x] Confirm the uploaded privacy policy PDF location.
+- [x] Add a public `/privacy` page that displays the PDF.
+- [x] Exclude `/privacy` and `/docs` from auth middleware.
+- [x] Verify static checks.
+
+## Review
+
+- Added `app/privacy/page.tsx` as a login-free PDF viewer for `public/docs/privacy-policy.pdf`.
+- Updated `middleware.ts` so `/privacy` and `/docs/*` are public.
+- `npx tsc --noEmit` passes.
+
 ## Report Default Selection
 
 - [x] Confirm current report card sort and default selection behavior.

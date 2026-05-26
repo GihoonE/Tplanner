@@ -10,6 +10,7 @@ const ONE_HOUR_IN_SECONDS = 60 * 60;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  trustHost: true,
   session: {
     strategy: "jwt",
     maxAge: THREE_DAYS_IN_SECONDS,
