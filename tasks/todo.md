@@ -1,3 +1,15 @@
+## Middleware Auth Cookie Name
+
+- [x] Identify deployed Auth.js session cookie name.
+- [x] Configure middleware `getToken` to read the Auth.js v5 secure session cookie.
+- [x] Verify static checks.
+
+## Review
+
+- Added an explicit Auth.js session cookie name in `middleware.ts`.
+- Production middleware now reads `__Secure-authjs.session-token`; local dev keeps `authjs.session-token`.
+- `npx tsc --noEmit` passes.
+
 ## Canonical Auth Domain
 
 - [x] Identify why `/login` keeps a `www` callbackUrl.

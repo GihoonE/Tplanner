@@ -3,6 +3,10 @@ import { getToken } from "next-auth/jwt";
 
 const WWW_HOST = "www.tplanner.co.kr";
 const CANONICAL_HOST = "tplanner.co.kr";
+const AUTH_SESSION_COOKIE =
+  process.env.NODE_ENV === "production"
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
 
 function normalizeUrl(url: URL) {
   const normalized = new URL(url);
@@ -56,6 +60,7 @@ export async function middleware(request: NextRequest) {
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
+    cookieName: AUTH_SESSION_COOKIE,
   });
 
   // 토큰이 없으면 로그인 창으로 보내버림
