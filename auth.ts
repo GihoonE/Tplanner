@@ -79,7 +79,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       };
 
       if (Object.keys(data).length > 0) {
-        await prisma.user.update({ where: { id: user.id }, data }).catch(() => {
+        await prisma.user.upsert({
+          where: { id: user.id },
+          create: {
+            id: user.id,
+            ...data,
+          },
+          update: data,
+        }).catch(() => {
           // OAuth sign-in should not fail just because optional profile sync failed.
         });
       }
