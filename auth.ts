@@ -36,9 +36,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    authorized({ auth }) {
-      return Boolean(auth?.user);
-    },
     async signIn({ user, profile }) {
       if (!user.id) return true;
 

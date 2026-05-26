@@ -66,8 +66,8 @@ export async function middleware(request: NextRequest) {
 
     // url이 /login?callbackUrl=http://localhost:3000/dashboard 
     // 리디렉션 페이지에 추가정보를 주는거임 어디서 왔는지.
-    loginUrl.searchParams.set("callbackUrl", request.url);
-
+    // loginUrl.searchParams.set("callbackUrl", request.url);
+    loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname + request.nextUrl.search);
     // loginUrl -> "/login?callbackUrl=http://localhost:3000/"
     return NextResponse.redirect(loginUrl);
   }
