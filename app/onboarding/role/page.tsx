@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 
 export default async function RoleOnboardingPage() {
   const session = await auth();
+  console.log("onboarding session:", JSON.stringify(session));
 
   if (!session?.user?.id) {
     redirect("/login?callbackUrl=/onboarding/role");
