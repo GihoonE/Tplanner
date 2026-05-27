@@ -60,7 +60,7 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
             <div className="text-[11px] text-slate-400">UTC{primary.display}</div>
           </div>
           <div className="text-right">
-            <div className="text-[13px] font-bold text-sky-600 tabular-nums">{nowInTz(now, primary.offset)}</div>
+            <div className="text-[13px] font-bold text-sky-600 tabular-nums">{nowInTz(now, primary.timeZone)}</div>
             <div className="text-[10px] text-sky-400">카드 표시 기준</div>
           </div>
         </div>
@@ -148,7 +148,7 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
 
             <div className="text-right">
               <div className={`text-[13px] font-bold tabular-nums ${t.on ? "text-sky-600" : "text-slate-300"}`}>
-                {nowInTz(now, t.offset)}
+                {nowInTz(now, t.timeZone)}
               </div>
               <button
                 onClick={() => removeExtra(t.id)}

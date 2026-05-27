@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
 import { SessionBlock } from "./SessionBlock";
 import {
-  addDays, sameDay, sessionsForDay, fmtTz, topPxForDate,
-  snapTo15, primaryMinToKst, extraHourLabel,
+  addDays, sameDay, sessionsForDay,
+  snapTo15, primaryMinToKst, extraHourLabel, wallClockDateInTimeZone,
+  topPxForWallClockDate,
 } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO, HOUR_HEIGHT_PX } from "@/lib/constants";
@@ -35,6 +36,7 @@ export function WeekView({
   const [anchorWeekStart, setAnchorWeekStart] = useState(() => new Date(curWeekStart));
 
   const primaryOffset  = getPrimaryOffset(tzData);
+  const primaryNow     = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
   const extraTz        = tzData.filter((t) => t.on && !t.primary);
   const gutterWidthPx  = 64 + extraTz.length * 44;
 
@@ -157,8 +159,8 @@ export function WeekView({
     [days, primaryOffset, hourHeightPx, onCreateRange]
   );
 
-  const nowTop = topPxForDate(now, primaryOffset, hourHeightPx);
-  const todayIndex = days.findIndex((d) => sameDay(d, now));
+  const nowTop = topPxForWallClockDate(primaryNow, hourHeightPx);
+  const todayIndex = days.findIndex((d) => sameDay(d, primaryNow));
   const gridHeightPx = hourHeightPx * 24;
   const totalDayWidthPx = days.length * dayWidthPx;
 
@@ -223,7 +225,7 @@ export function WeekView({
           {/* Day columns header */}
           <div className="grid" style={{ gridTemplateColumns: `repeat(${days.length}, ${dayWidthPx}px)` }}>
           {days.map((d, i) => {
-            const tod = sameDay(d, now);
+            const tod = sameDay(d, primaryNow);
             return (
               <button
                 key={i}
@@ -278,7 +280,7 @@ export function WeekView({
                 {HOURS.map((h) => (
                   <div key={h} className="border-b border-slate-200 relative" style={{ height: hourHeightPx }}>
                     <span className="absolute top-1 right-1.5 text-[9px] font-semibold text-sky-500">
-                      {String(extraHourLabel(h, t.offset, primaryOffset)).padStart(2, "0")}
+                      {String(extraHourLabel(h, t.offset, primaryOffset)).padStart(2, "0")}:00
                     </span>
                   </div>
                 ))}
@@ -300,7 +302,7 @@ export function WeekView({
               const daySessions = sessionsForDay(sessions, d).sort(
                 (a, b) => a.start.getTime() - b.start.getTime(),
               );
-              const isToday     = sameDay(d, now);
+              const isToday     = sameDay(d, primaryNow);
 
               return (
                 <div

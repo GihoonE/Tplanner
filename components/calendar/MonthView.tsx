@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
-import { addDays, sameDay, fmtTz } from "@/lib/utils";
+import { addDays, sameDay, fmtTz, wallClockDateInTimeZone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO } from "@/lib/constants";
 import { resolveAvatarBg } from "@/lib/studentColor";
@@ -52,6 +52,7 @@ export function MonthView() {
   const skipScrollToRef = useRef(false);
 
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
 
   const months = useMemo(
     () =>
@@ -156,7 +157,7 @@ export function MonthView() {
                 style={{ gridTemplateColumns: "repeat(7,1fr)", gridTemplateRows: "repeat(6,1fr)" }}
               >
                 {cells.map(({ date, other }, i) => {
-                  const tod = sameDay(date, now);
+                  const tod = sameDay(date, primaryNow);
                   const daySes = sessions
                     .filter((s) => sameDay(s.start, date))
                     .sort((a, b) => a.start.getTime() - b.start.getTime());

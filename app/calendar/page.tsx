@@ -54,6 +54,7 @@ export default function CalendarPage() {
   const setStudents = useTutorStore((s) => s.setStudents);
   const setSessions = useTutorStore((s) => s.setSessions);
   const addSession = useTutorStore((s) => s.addSession);
+  const setNow = useTutorStore((s) => s.setNow);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createRange, setCreateRange] = useState<{
     start: Date;
@@ -76,6 +77,13 @@ export default function CalendarPage() {
     const to = addDays(from, 1);
     return { from, to };
   }
+
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, [setNow]);
 
   useEffect(() => {
     let cancelled = false;

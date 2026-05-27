@@ -62,6 +62,7 @@ interface TutorStore {
   navigateDay: (dir: 1 | -1) => void;
   goToday: () => void;
   jumpToDate: (d: Date) => void;
+  setNow: (d: Date) => void;
 
   // ── Actions — modal ───────────────────────────────────────────────────────
   openModal: (sessionId: number, tab?: SessionModalTab) => void;
@@ -201,6 +202,8 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       curDay: new Date(d),
       curMonth: new Date(d.getFullYear(), d.getMonth(), 1),
     }),
+
+  setNow: (d) => set({ now: new Date(d) }),
 
   // ── Modal actions ──────────────────────────────────────────────────────────
   openModal: (sessionId, tab = "detail") =>

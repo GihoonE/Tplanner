@@ -11,7 +11,8 @@ import {
   primaryMinToKst,
   sessionsForDay,
   snapTo15,
-  topPxForDate,
+  topPxForWallClockDate,
+  wallClockDateInTimeZone,
 } from "@/lib/utils";
 import { HOUR_HEIGHT_PX } from "@/lib/constants";
 
@@ -36,6 +37,7 @@ export function DayView({
   const creating = useRef<{ sMin: number; eMin: number } | null>(null);
 
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
   const extraTz = tzData.filter((t) => t.on && !t.primary);
   const daySessions = useMemo(
     () =>
@@ -45,10 +47,10 @@ export function DayView({
     [curDay, sessions],
   );
   const isToday =
-    curDay.getFullYear() === now.getFullYear() &&
-    curDay.getMonth() === now.getMonth() &&
-    curDay.getDate() === now.getDate();
-  const nowTop = topPxForDate(now, primaryOffset, hourHeightPx);
+    curDay.getFullYear() === primaryNow.getFullYear() &&
+    curDay.getMonth() === primaryNow.getMonth() &&
+    curDay.getDate() === primaryNow.getDate();
+  const nowTop = topPxForWallClockDate(primaryNow, hourHeightPx);
   const gridHeightPx = hourHeightPx * 24;
 
   useEffect(() => {
@@ -189,7 +191,7 @@ export function DayView({
                     {String(extraHourLabel(h, t.offset, primaryOffset)).padStart(
                       2,
                       "0",
-                    )}
+                    )}:00
                   </span>
                 </div>
               ))}

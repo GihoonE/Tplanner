@@ -71,6 +71,32 @@ export function fmtTz(d: Date, primaryOffset: number): string {
   );
 }
 
+export function wallClockDateInTimeZone(now: Date, timeZone: string): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const value = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const hour = value("hour") % 24;
+
+  return new Date(
+    value("year"),
+    value("month") - 1,
+    value("day"),
+    hour,
+    value("minute"),
+    value("second"),
+    0,
+  );
+}
+
 /** 수업 길이를 소수 한 자리 시간 문자열로 (예: 1.5, 1.0) */
 export function formatSessionDurationHours(start: Date, end: Date): string {
   const raw = (end.getTime() - start.getTime()) / 3600000;
@@ -83,15 +109,13 @@ export function extraHourLabel(h: number, extraOffset: number, primaryOffset: nu
   return ((h + extraOffset - primaryOffset) % 24 + 24) % 24;
 }
 
-/** Current time string in an arbitrary UTC offset (relative to KST storage) */
-export function nowInTz(now: Date, offset: number): string {
-  const shiftMin = (offset - 9) * 60;
-  const raw = now.getHours() * 60 + now.getMinutes() + shiftMin;
-  const norm = ((raw % 1440) + 1440) % 1440;
+/** Current wall-clock time string in an IANA timezone. */
+export function nowInTz(now: Date, timeZone: string): string {
+  const wallClock = wallClockDateInTimeZone(now, timeZone);
   return (
-    String(Math.floor(norm / 60)).padStart(2, "0") +
+    String(wallClock.getHours()).padStart(2, "0") +
     ":" +
-    String(norm % 60).padStart(2, "0")
+    String(wallClock.getMinutes()).padStart(2, "0")
   );
 }
 
@@ -112,6 +136,14 @@ export function topPxForDate(
   hourHeightPx = HOUR_HEIGHT_PX,
 ): number {
   return minFromMidPrimary(d, primaryOffset) * (hourHeightPx / 60);
+}
+
+export function topPxForWallClockDate(
+  d: Date,
+  hourHeightPx = HOUR_HEIGHT_PX,
+): number {
+  const minutes = d.getHours() * 60 + d.getMinutes();
+  return minutes * (hourHeightPx / 60);
 }
 
 export function heightPxForDuration(
