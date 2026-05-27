@@ -9,10 +9,12 @@ export const metadata: Metadata = {
 type LoginPageProps = {
   searchParams?: {
     callbackUrl?: string;
+    error?: string;
   };
 };
 
 export default function LoginPage({ searchParams }: LoginPageProps) {
+  const error = searchParams?.error;
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-5 py-10">
       <section className="w-full max-w-[420px]">
@@ -31,6 +33,11 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
         </div>
 
         <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-[0_18px_55px_rgba(15,23,42,.08)]">
+          {error === "OAuthAccountNotLinked" && (
+            <p className = "mb-4 rounded-xl bg-red-50 px-4 py-3 text-[13px] font-medium leading-5 text-red-600">
+              이미 다른 방법으로 가입된 이메일입니다. 처음 가입한 방법으로 로그인해주세요.
+            </p>
+          )}
           <div className="space-y-2">
             <GoogleSignInButton callbackUrl={searchParams?.callbackUrl} />
             <KakaoSignInButton callbackUrl={searchParams?.callbackUrl} />
