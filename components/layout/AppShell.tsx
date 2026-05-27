@@ -6,14 +6,14 @@ import { Sidebar } from "./Sidebar";
 import { usePreferenceQuery } from "@/hooks/useAppQueries";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const setPrimaryTimezone = useTutorStore((s) => s.setPrimaryTimezone);
+  const setTimezonePreference = useTutorStore((s) => s.setTimezonePreference);
   const { data } = usePreferenceQuery();
 
   useEffect(() => {
     if (data?.primaryTimezone) {
-      setPrimaryTimezone(data.primaryTimezone);
+      setTimezonePreference(data.primaryTimezone, data.extraTimezones ?? []);
     }
-  }, [data?.primaryTimezone, setPrimaryTimezone]);
+  }, [data?.primaryTimezone, data?.extraTimezones, setTimezonePreference]);
 
   return (
     <div className="flex h-screen overflow-hidden">

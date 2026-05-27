@@ -4,12 +4,15 @@ import { useTutorStore, useTzData } from "@/store";
 import { TZ_CATALOG } from "@/lib/constants";
 import { nowInTz } from "@/lib/utils";
 import { queryKeys } from "@/hooks/useAppQueries";
+import type { AppPreference } from "@/hooks/useAppQueries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import type { TzEntry } from "@/types";
 
 export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const tzData       = useTzData();
   const setPrimary   = useTutorStore((s) => s.setPrimaryTz);
+  const setTimezonePreference = useTutorStore((s) => s.setTimezonePreference);
   const toggleExtra  = useTutorStore((s) => s.toggleExtraTz);
   const addExtra     = useTutorStore((s) => s.addExtraTz);
   const removeExtra  = useTutorStore((s) => s.removeExtraTz);
@@ -23,6 +26,55 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
   const primary  = tzData[0];
   const extras   = tzData.slice(1);
   const addable  = TZ_CATALOG.filter((c) => !tzData.find((t) => t.id === c.id));
+
+  const preferenceFromTzData = (nextTzData: TzEntry[]): AppPreference => ({
+    primaryTimezone: nextTzData[0]?.timeZone ?? "Asia/Seoul",
+    extraTimezones: nextTzData
+      .slice(1)
+      .map((timezone) => ({ timeZone: timezone.timeZone, on: timezone.on })),
+  });
+
+  const savePreference = async (
+    nextPreference: AppPreference,
+    previousPreference = preferenceFromTzData(tzData),
+  ) => {
+    setError(null);
+    setSaving(true);
+    queryClient.setQueryData(queryKeys.preferences, nextPreference);
+
+    try {
+      const res = await fetch("/api/preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextPreference),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body.error === "string"
+            ? body.error
+            : "타임존 저장에 실패했습니다.",
+        );
+      }
+      const savedPreference = (await res.json()) as AppPreference;
+      queryClient.setQueryData(queryKeys.preferences, savedPreference);
+      setTimezonePreference(
+        savedPreference.primaryTimezone,
+        savedPreference.extraTimezones,
+      );
+    } catch (e) {
+      queryClient.setQueryData(queryKeys.preferences, previousPreference);
+      setTimezonePreference(
+        previousPreference.primaryTimezone,
+        previousPreference.extraTimezones,
+      );
+      setError(
+        e instanceof Error ? e.message : "타임존 저장에 실패했습니다.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -77,39 +129,18 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
             onChange={async (e) => {
               const nextId = e.target.value;
               const next = TZ_CATALOG.find((c) => c.id === nextId);
-              const previousId = primary.id;
               if (!next) return;
 
-              setError(null);
-              setSaving(true);
+              const previousPreference = preferenceFromTzData(tzData);
+              const nextTzData = [
+                { ...next, on: true, primary: true },
+                ...extras.filter((timezone) => timezone.timeZone !== next.timeZone),
+              ];
               setPrimary(nextId);
-              try {
-                const res = await fetch("/api/preferences", {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ primaryTimezone: next.timeZone }),
-                });
-                if (!res.ok) {
-                  const body = await res.json().catch(() => ({}));
-                  throw new Error(
-                    typeof body.error === "string"
-                      ? body.error
-                      : "타임존 저장에 실패했습니다.",
-                  );
-                }
-                queryClient.setQueryData(queryKeys.preferences, {
-                  primaryTimezone: next.timeZone,
-                });
-              } catch (e) {
-                setPrimary(previousId);
-                setError(
-                  e instanceof Error
-                    ? e.message
-                    : "타임존 저장에 실패했습니다.",
-                );
-              } finally {
-                setSaving(false);
-              }
+              await savePreference(
+                preferenceFromTzData(nextTzData),
+                previousPreference,
+              );
             }}
             className="w-full text-[13px] px-3 py-2 border border-slate-200 rounded-xl bg-white text-slate-800 outline-none cursor-pointer hover:border-sky-300 transition-colors"
           >
@@ -139,7 +170,20 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
           <div key={t.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 mb-2 hover:border-sky-200 transition-colors">
             {/* Toggle */}
             <button
-              onClick={() => toggleExtra(t.id)}
+              disabled={saving}
+              onClick={async () => {
+                const previousPreference = preferenceFromTzData(tzData);
+                const nextTzData = tzData.map((timezone) =>
+                  timezone.id === t.id && !timezone.primary
+                    ? { ...timezone, on: !timezone.on }
+                    : timezone,
+                );
+                toggleExtra(t.id);
+                await savePreference(
+                  preferenceFromTzData(nextTzData),
+                  previousPreference,
+                );
+              }}
               className={`w-9 h-5 rounded-full relative transition-colors flex-shrink-0 ${t.on ? "bg-sky-500" : "bg-slate-200"}`}
             >
               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${t.on ? "left-[18px]" : "left-0.5"}`} />
@@ -157,7 +201,18 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
                 {nowInTz(now, t.timeZone)}
               </div>
               <button
-                onClick={() => removeExtra(t.id)}
+                disabled={saving}
+                onClick={async () => {
+                  const previousPreference = preferenceFromTzData(tzData);
+                  const nextTzData = tzData.filter(
+                    (timezone) => !(timezone.id === t.id && !timezone.primary),
+                  );
+                  removeExtra(t.id);
+                  await savePreference(
+                    preferenceFromTzData(nextTzData),
+                    previousPreference,
+                  );
+                }}
                 className="text-[10px] text-slate-300 hover:text-red-400 transition-colors"
               >
                 제거
@@ -184,7 +239,23 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
                 ))}
               </select>
               <button
-                onClick={() => { if (addSel) { addExtra(addSel); setAddSel(""); } }}
+                disabled={saving}
+                onClick={async () => {
+                  if (!addSel) return;
+                  const next = TZ_CATALOG.find((c) => c.id === addSel);
+                  if (!next) return;
+                  const previousPreference = preferenceFromTzData(tzData);
+                  const nextTzData = [
+                    ...tzData,
+                    { ...next, on: true, primary: false },
+                  ];
+                  addExtra(addSel);
+                  setAddSel("");
+                  await savePreference(
+                    preferenceFromTzData(nextTzData),
+                    previousPreference,
+                  );
+                }}
                 className="px-3.5 py-2 bg-sky-500 text-white text-[12px] font-bold rounded-xl hover:bg-sky-600 transition-colors"
               >
                 추가

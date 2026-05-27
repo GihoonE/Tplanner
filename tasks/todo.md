@@ -1,3 +1,22 @@
+## User Timezone Preferences
+
+- [x] Inspect current global preference model and API.
+- [x] Add user-scoped preference model with primary and extra timezones.
+- [x] Add Prisma migration and regenerate client.
+- [x] Update preferences API to read/write authenticated user preferences.
+- [x] Update timezone store to restore extra timezone selections.
+- [x] Persist primary, toggle, add, and remove timezone actions from the panel.
+- [x] Verify static checks and production build.
+
+## Review
+
+- Added `UserPreference` with `primaryTimezone` and JSON `extraTimezones` so each logged-in user can keep their own timezone setup.
+- Changed `/api/preferences` from the old global `AppPreference` read/write path to authenticated user-scoped upserts.
+- Restored primary and extra timezone selections into the shared timezone store from the preference query.
+- Made timezone panel changes persist primary changes, extra timezone add/remove, and each extra timezone on/off toggle.
+- Applied the new migration to the current Neon database manually via `prisma db execute`, then marked it applied with `prisma migrate resolve` because `prisma migrate deploy` returned a schema engine error without details.
+- Confirmed `UserPreference` exists in the database, `npx prisma migrate status` is up to date, `npx tsc --noEmit` passes, and `npm run build` passes.
+
 ## Data Layer Migration Plan
 
 - [x] Choose the data-fetching library and install it.

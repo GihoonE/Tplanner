@@ -90,6 +90,16 @@ model AppPreference {
   updatedAt       DateTime @updatedAt
 }
 
+model UserPreference {
+  userId          String   @id
+  primaryTimezone String   @default("Asia/Seoul")
+  extraTimezones  Json     @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -102,6 +112,7 @@ model User {
   students      Student[] @relation("InstructorStudents")
   parentLinks   StudentParent[]
   invitations   StudentInvitation[]
+  preference    UserPreference?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }

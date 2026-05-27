@@ -17,6 +17,10 @@ export type ApiSessionRow = {
 
 export type AppPreference = {
   primaryTimezone: string;
+  extraTimezones: {
+    timeZone: string;
+    on: boolean;
+  }[];
 };
 
 export const queryKeys = {

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { TZ_CATALOG } from "@/lib/constants";
+import { auth } from "@/auth";
 
-const PREFERENCE_ID = 1;
 const DEFAULT_TIMEZONE = "Asia/Seoul";
+
+type ExtraTimezonePreference = {
+  timeZone: string;
+  on: boolean;
+};
+
+const DEFAULT_EXTRA_TIMEZONES: ExtraTimezonePreference[] = [];
 
 function isSupportedTimezone(value: unknown): value is string {
   return (
@@ -12,22 +19,72 @@ function isSupportedTimezone(value: unknown): value is string {
   );
 }
 
-function serializePreference(preference: { primaryTimezone: string }) {
+function normalizeExtraTimezones(
+  value: unknown,
+  primaryTimezone: string,
+): ExtraTimezonePreference[] {
+  if (!Array.isArray(value)) return DEFAULT_EXTRA_TIMEZONES;
+
+  const normalized = new Map<string, ExtraTimezonePreference>();
+
+  for (const item of value) {
+    if (typeof item === "string") {
+      if (isSupportedTimezone(item) && item !== primaryTimezone) {
+        normalized.set(item, { timeZone: item, on: true });
+      }
+      continue;
+    }
+
+    if (!item || typeof item !== "object") continue;
+
+    const candidate = item as Record<string, unknown>;
+    const timeZone = candidate.timeZone;
+    if (!isSupportedTimezone(timeZone) || timeZone === primaryTimezone) continue;
+
+    normalized.set(timeZone, {
+      timeZone,
+      on: typeof candidate.on === "boolean" ? candidate.on : true,
+    });
+  }
+
+  return Array.from(normalized.values());
+}
+
+function serializePreference(preference: {
+  primaryTimezone: string;
+  extraTimezones: unknown;
+}) {
+  const primaryTimezone = isSupportedTimezone(preference.primaryTimezone)
+    ? preference.primaryTimezone
+    : DEFAULT_TIMEZONE;
+
   return {
-    primaryTimezone: isSupportedTimezone(preference.primaryTimezone)
-      ? preference.primaryTimezone
-      : DEFAULT_TIMEZONE,
+    primaryTimezone,
+    extraTimezones: normalizeExtraTimezones(
+      preference.extraTimezones,
+      primaryTimezone,
+    ),
   };
 }
 
 export async function GET() {
   try {
-    const preference = await prisma.appPreference.upsert({
-      where: { id: PREFERENCE_ID },
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "로그인이 필요합니다." },
+        { status: 401 },
+      );
+    }
+
+    const preference = await prisma.userPreference.upsert({
+      where: { userId },
       update: {},
       create: {
-        id: PREFERENCE_ID,
+        userId,
         primaryTimezone: DEFAULT_TIMEZONE,
+        extraTimezones: DEFAULT_EXTRA_TIMEZONES,
       },
     });
 
@@ -44,6 +101,15 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "로그인이 필요합니다." },
+        { status: 401 },
+      );
+    }
+
     const { primaryTimezone } = body;
 
     if (!isSupportedTimezone(primaryTimezone)) {
@@ -52,13 +118,18 @@ export async function PATCH(request: NextRequest) {
         { status: 400 },
       );
     }
+    const extraTimezones = normalizeExtraTimezones(
+      body.extraTimezones,
+      primaryTimezone,
+    );
 
-    const preference = await prisma.appPreference.upsert({
-      where: { id: PREFERENCE_ID },
-      update: { primaryTimezone },
+    const preference = await prisma.userPreference.upsert({
+      where: { userId },
+      update: { primaryTimezone, extraTimezones },
       create: {
-        id: PREFERENCE_ID,
+        userId,
         primaryTimezone,
+        extraTimezones,
       },
     });
 

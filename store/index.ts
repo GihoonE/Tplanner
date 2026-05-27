@@ -17,6 +17,11 @@ import type {
 } from "@/types";
 import { TZ_CATALOG } from "@/lib/constants";
 
+type ExtraTimezonePreference = {
+  timeZone: string;
+  on?: boolean;
+};
+
 // ── Initial timezone state ────────────────────────────────────────────────────
 const INITIAL_TZ: TzEntry[] = [
   { ...TZ_CATALOG[0], on: true, primary: true }, // KST — primary
@@ -72,6 +77,10 @@ interface TutorStore {
   // ── Actions — timezone ────────────────────────────────────────────────────
   setPrimaryTz: (id: string) => void;
   setPrimaryTimezone: (timeZone: string) => void;
+  setTimezonePreference: (
+    primaryTimezone: string,
+    extraTimezones: ExtraTimezonePreference[],
+  ) => void;
   toggleExtraTz: (id: string) => void;
   addExtraTz: (id: string) => void;
   removeExtraTz: (id: string) => void;
@@ -93,6 +102,32 @@ function weekStart(d: Date): Date {
   x.setDate(x.getDate() - x.getDay());
   x.setHours(0, 0, 0, 0);
   return x;
+}
+
+function buildTzData(
+  primaryTimezone: string,
+  extraTimezones: ExtraTimezonePreference[],
+): TzEntry[] {
+  const primaryCat =
+    TZ_CATALOG.find((c) => c.timeZone === primaryTimezone) ?? TZ_CATALOG[0];
+  const seen = new Set<string>();
+  const extras = extraTimezones
+    .filter((extra) => extra.timeZone !== primaryCat.timeZone)
+    .map((extra) => {
+      const cat = TZ_CATALOG.find((c) => c.timeZone === extra.timeZone);
+      if (!cat || seen.has(cat.timeZone)) return null;
+      seen.add(cat.timeZone);
+      return { ...cat, on: extra.on ?? true, primary: false };
+    })
+    .filter((entry): entry is TzEntry => Boolean(entry));
+
+  return [{ ...primaryCat, on: true, primary: true }, ...extras];
+}
+
+function extrasFromTzData(tzData: TzEntry[]): ExtraTimezonePreference[] {
+  return tzData
+    .filter((entry) => !entry.primary)
+    .map((entry) => ({ timeZone: entry.timeZone, on: entry.on }));
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -218,10 +253,12 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
     const cat = TZ_CATALOG.find((c) => c.id === id);
     if (!cat) return;
     set((state) => ({
-      tzData: [
-        { ...cat, on: true, primary: true },
-        ...state.tzData.slice(1).filter((t) => t.id !== cat.id),
-      ],
+      tzData: buildTzData(
+        cat.timeZone,
+        extrasFromTzData(state.tzData).filter(
+          (extra) => extra.timeZone !== cat.timeZone,
+        ),
+      ),
     }));
   },
 
@@ -229,12 +266,17 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
     const cat = TZ_CATALOG.find((c) => c.timeZone === timeZone);
     if (!cat) return;
     set((state) => ({
-      tzData: [
-        { ...cat, on: true, primary: true },
-        ...state.tzData.slice(1).filter((t) => t.id !== cat.id),
-      ],
+      tzData: buildTzData(
+        cat.timeZone,
+        extrasFromTzData(state.tzData).filter(
+          (extra) => extra.timeZone !== cat.timeZone,
+        ),
+      ),
     }));
   },
+
+  setTimezonePreference: (primaryTimezone, extraTimezones) =>
+    set({ tzData: buildTzData(primaryTimezone, extraTimezones) }),
 
   toggleExtraTz: (id) =>
     set((state) => ({
