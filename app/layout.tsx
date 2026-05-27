@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { AuthSessionProvider } from "@/components/auth/AuthSessionProvider";
 import { QueryProvider } from "@/components/query/QueryProvider";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -23,6 +25,8 @@ export default function RootLayout({
         <QueryProvider>
           <AuthSessionProvider>{children}</AuthSessionProvider>
         </QueryProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
