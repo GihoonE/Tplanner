@@ -129,6 +129,39 @@ export function primaryMinToKst(
   return { h: Math.floor(kstNorm / 60), m: kstNorm % 60 };
 }
 
+export function primaryWallClockDateFromKstDate(
+  d: Date,
+  primaryOffset: number,
+): Date {
+  return new Date(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    d.getHours(),
+    d.getMinutes() + (primaryOffset - 9) * 60,
+    d.getSeconds(),
+    d.getMilliseconds(),
+  );
+}
+
+export function sessionStatusInPrimaryTimezone(
+  session: { start: Date; end: Date },
+  now: Date,
+  primaryOffset: number,
+  primaryTimeZone: string,
+): "upcoming" | "ongoing" | "completed" {
+  const primaryNow = wallClockDateInTimeZone(now, primaryTimeZone);
+  const primaryStart = primaryWallClockDateFromKstDate(
+    session.start,
+    primaryOffset,
+  );
+  const primaryEnd = primaryWallClockDateFromKstDate(session.end, primaryOffset);
+
+  if (primaryNow >= primaryEnd) return "completed";
+  if (primaryNow >= primaryStart) return "ongoing";
+  return "upcoming";
+}
+
 // ── Calendar pixel helpers ────────────────────────────────────────────────────
 export function topPxForDate(
   d: Date,

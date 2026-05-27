@@ -3,12 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AddStudentModal } from "@/components/students/AddStudentModal";
 import { EditStudentModal } from "@/components/students/EditStudentModal";
+import { queryKeys, useStudentsQuery } from "@/hooks/useAppQueries";
 import type { Student } from "@/types";
 
 const STATUS_BADGE: Record<
@@ -157,16 +159,19 @@ export default function StudentsPage() {
   const router = useRouter();
   const { data: authSession } = useSession();
   const readOnly = authSession?.user?.role === "parent";
+  const queryClient = useQueryClient();
+  const studentsQuery = useStudentsQuery();
   // ── API에서 가져오는 데이터 ─────────────────────────────────────────────
   // state는 변수랑 달리 값이 바뀌면 React가 감지해 렌더링을 다시 해줌.
   const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
+  const loading = studentsQuery.isLoading;
 
   // error -> 현재 값
   // setError -> 값 바꾸는 함수
   // state | null -> string or null
   // (null) -> 초기값
-  const [error, setError] = useState<string | null>(null);
+  const error =
+    studentsQuery.error instanceof Error ? studentsQuery.error.message : null;
 
   // ── 페이지 내부 상태 (검색, 선택) ───────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -185,26 +190,13 @@ export default function StudentsPage() {
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/students");
-        if (!res.ok) throw new Error("학생 조회 실패");
-        const data = await res.json();
-        setStudents(data);
-        const defaultStudent = getDefaultSelectedStudent(data);
-        if (defaultStudent && selectedId === null) {
-          setSelectedId(defaultStudent.id);
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
-      } finally {
-        setLoading(false);
-      }
+    if (!studentsQuery.data) return;
+    setStudents(studentsQuery.data);
+    const defaultStudent = getDefaultSelectedStudent(studentsQuery.data);
+    if (defaultStudent && selectedId === null) {
+      setSelectedId(defaultStudent.id);
     }
-    load();
-  }, []);
+  }, [selectedId, studentsQuery.data]);
 
   useEffect(() => {
     if (students.length === 0) {
@@ -290,6 +282,9 @@ export default function StudentsPage() {
         throw new Error(data?.error ?? "학생 연결 해제에 실패했습니다.");
       }
       setStudents((prev) => prev.filter((item) => item.id !== student.id));
+      queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
+        prev?.filter((item) => item.id !== student.id),
+      );
     } catch (e) {
       setUnlinkError(
         e instanceof Error ? e.message : "학생 연결 해제에 실패했습니다.",
@@ -319,6 +314,9 @@ export default function StudentsPage() {
         // s: AddStudentModal 내부 API가 반환하는 학생
         onAdded={(s) => {
           setStudents((prev) => [...prev, s].sort((a, b) => a.id - b.id));
+          queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
+            [...(prev ?? []), s].sort((a, b) => a.id - b.id),
+          );
           setSelectedId(s.id);
         }}
       />
@@ -333,10 +331,16 @@ export default function StudentsPage() {
           setStudents((prev) =>
             prev.map((x) => (x.id === s.id ? { ...x, ...s } : x)),
           );
+          queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
+            prev?.map((x) => (x.id === s.id ? { ...x, ...s } : x)),
+          );
         }}
         onDeleted={(id) => {
           // filter(x): 조건을 만족하는 x만 남김
           setStudents((prev) => prev.filter((x) => x.id !== id));
+          queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
+            prev?.filter((x) => x.id !== id),
+          );
         }}
       />
 

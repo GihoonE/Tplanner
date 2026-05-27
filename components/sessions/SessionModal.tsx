@@ -1,7 +1,7 @@
 "use client";
 
 import { useTutorStore, useNow, useTzData } from "@/store";
-import { fmtTz, formatFullDate } from "@/lib/utils";
+import { fmtTz, formatFullDate, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
 import { Button } from "@/components/ui/Button";
@@ -70,6 +70,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
   const now = useNow();
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
 
   useEffect(() => {
     if (!modalOpen || !modalSessionId) {
@@ -107,11 +108,15 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
   }
   if (error || !session) return null;
 
-  const isCompleted = session.end < now;
-  const isOngoing = session.start <= now && now < session.end;
-  const statusText = isCompleted
+  const status = sessionStatusInPrimaryTimezone(
+    session,
+    now,
+    primaryOffset,
+    primaryTimeZone,
+  );
+  const statusText = status === "completed"
     ? "✓ 완료됨"
-    : isOngoing
+    : status === "ongoing"
       ? "🔴 진행중"
       : "🔵 예정";
 

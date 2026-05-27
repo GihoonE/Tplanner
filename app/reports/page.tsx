@@ -2,25 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { fmtTz, formatMonthDay, getPrimaryOffset } from "@/lib/utils";
 import { useTzData } from "@/store";
+import {
+  apiSessionToSession,
+  queryKeys,
+  useReportsQuery,
+  useSessionsQuery,
+  useStudentsQuery,
+  type ApiSessionRow,
+} from "@/hooks/useAppQueries";
 import type { Focus, Report, Session, Student, Understanding } from "@/types";
-
-type ApiSessionRow = {
-  id: number;
-  studentId: number | null;
-  start: string;
-  end: string;
-  place: string;
-  notes: string;
-  understanding: string;
-  focus: string;
-  homework: { id: number; text: string; done: boolean }[];
-};
 
 type SessionDraft = {
   notes: string;
@@ -62,20 +59,6 @@ const FOCUS_OPTIONS: { value: Focus; label: string }[] = [
   { value: "normal", label: "보통" },
   { value: "low", label: "낮음" },
 ];
-
-function apiSessionToSession(row: ApiSessionRow): Session {
-  return {
-    id: row.id,
-    studentId: row.studentId,
-    start: new Date(row.start),
-    end: new Date(row.end),
-    place: row.place,
-    notes: row.notes,
-    understanding: row.understanding as Understanding,
-    focus: row.focus as Focus,
-    homework: row.homework,
-  };
-}
 
 function apiReportToReport(row: ApiReportRow): Report {
   return {
@@ -171,8 +154,12 @@ function compareStudentsByReportOrder(a: Student, b: Student) {
 export default function ReportsPage() {
   const { data: authSession } = useSession();
   const readOnly = authSession?.user?.role === "parent";
+  const queryClient = useQueryClient();
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
+  const studentsQuery = useStudentsQuery();
+  const sessionsQuery = useSessionsQuery();
+  const reportsQuery = useReportsQuery();
   const [students, setStudents] = useState<Student[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -185,10 +172,20 @@ export default function ReportsPage() {
   );
   const [drafts, setDrafts] = useState<Record<number, SessionDraft>>({});
   const [search, setSearch] = useState("");
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadState =
+    studentsQuery.isLoading || sessionsQuery.isLoading || reportsQuery.isLoading
+      ? "loading"
+      : studentsQuery.isError || sessionsQuery.isError || reportsQuery.isError
+        ? "error"
+        : "ready";
+  const loadError =
+    studentsQuery.error instanceof Error
+      ? studentsQuery.error.message
+      : sessionsQuery.error instanceof Error
+        ? sessionsQuery.error.message
+        : reportsQuery.error instanceof Error
+          ? reportsQuery.error.message
+          : null;
   const [savingId, setSavingId] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -209,52 +206,23 @@ export default function ReportsPage() {
   const [toMonth, setToMonth] = useState(() => monthValue(new Date()));
 
   useEffect(() => {
-    let cancelled = false;
+    if (!studentsQuery.data) return;
+    const firstStudentByReportOrder = [...studentsQuery.data].sort(
+      compareStudentsByReportOrder,
+    )[0];
+    setStudents(studentsQuery.data);
+    setSelectedStudentId((current) => current ?? firstStudentByReportOrder?.id ?? null);
+  }, [studentsQuery.data]);
 
-    async function load() {
-      setLoadState("loading");
-      setLoadError(null);
-      try {
-        const [studentsRes, sessionsRes, reportsRes] = await Promise.all([
-          fetch("/api/students"),
-          fetch("/api/sessions"),
-          fetch("/api/reports"),
-        ]);
-        if (!studentsRes.ok) throw new Error("학생 목록을 불러오지 못했습니다.");
-        if (!sessionsRes.ok) throw new Error("수업 목록을 불러오지 못했습니다.");
-        if (!reportsRes.ok) throw new Error("리포트 목록을 불러오지 못했습니다.");
+  useEffect(() => {
+    if (sessionsQuery.data) setSessions(sessionsQuery.data);
+  }, [sessionsQuery.data]);
 
-        const rawStudents = (await studentsRes.json()) as Student[];
-        const rawSessions = (await sessionsRes.json()) as ApiSessionRow[];
-        const rawReports = (await reportsRes.json()) as ApiReportRow[];
-        if (cancelled) return;
-
-        const nextSessions = rawSessions.map(apiSessionToSession);
-        const firstStudentByReportOrder = [...rawStudents].sort(
-          compareStudentsByReportOrder,
-        )[0];
-        setStudents(rawStudents);
-        setSessions(nextSessions);
-        setReports(rawReports.map(apiReportToReport));
-        setSelectedStudentId(
-          (current) => current ?? firstStudentByReportOrder?.id ?? null,
-        );
-        setLoadState("ready");
-      } catch (e) {
-        if (!cancelled) {
-          setLoadError(
-            e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.",
-          );
-          setLoadState("error");
-        }
-      }
+  useEffect(() => {
+    if (reportsQuery.data) {
+      setReports(reportsQuery.data);
     }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [reportsQuery.data]);
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -420,6 +388,10 @@ export default function ReportsPage() {
       setSessions((prev) =>
         prev.map((item) => (item.id === updated.id ? updated : item)),
       );
+      queryClient.setQueryData<Session[]>(queryKeys.sessions, (prev) =>
+        prev?.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[session.id];
@@ -516,6 +488,10 @@ export default function ReportsPage() {
       }
       const saved = apiReportToReport(body as ApiReportRow);
       setReports((prev) => [saved, ...prev]);
+      queryClient.setQueryData<Report[]>(queryKeys.reports, (prev) => [
+        saved,
+        ...(prev ?? []),
+      ]);
       openListMode();
     } catch (e) {
       setReportError(e instanceof Error ? e.message : "리포트 저장에 실패했습니다.");
@@ -553,6 +529,9 @@ export default function ReportsPage() {
       const updated = apiReportToReport(body as ApiReportRow);
       setReports((prev) =>
         prev.map((report) => (report.id === updated.id ? updated : report)),
+      );
+      queryClient.setQueryData<Report[]>(queryKeys.reports, (prev) =>
+        prev?.map((report) => (report.id === updated.id ? updated : report)),
       );
       setSelectedReportId(updated.id);
       setReportTitle(updated.title);

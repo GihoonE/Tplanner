@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTzData } from "@/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { fmtTz, getPrimaryOffset } from "@/lib/utils";
+import { fmtTz, getPrimaryOffset, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import type { Session, Student } from "@/types";
 
 type RecordListProps = {
@@ -30,6 +30,7 @@ export function RecordList({
   const [now, setNow] = useState(() => new Date());
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
 
   const sorted = [...sessions].sort(
     // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
@@ -105,8 +106,12 @@ export function RecordList({
         const st = students.find((x) => x.id === s.studentId);
         const isActive = s.id === activeId;
         const hasNotes = s.notes.trim().length > 0;
-        const sessionStatus =
-          now < s.start ? "upcoming" : now < s.end ? "ongoing" : "completed";
+        const sessionStatus = sessionStatusInPrimaryTimezone(
+          s,
+          now,
+          primaryOffset,
+          primaryTimeZone,
+        );
 
         return (
           <div

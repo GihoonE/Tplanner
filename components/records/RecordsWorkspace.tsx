@@ -3,10 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { RecordList } from "@/components/records/RecordList";
 import { RecordEditor } from "@/components/records/RecordEditor";
 import { NewSessionRecordModal } from "@/components/records/NewSessionRecordModal";
-import type { Session, Student, Understanding, Focus } from "@/types";
+import { queryKeys, useSessionsQuery, useStudentsQuery } from "@/hooks/useAppQueries";
+import type { Session, Student } from "@/types";
 
 export function RecordsWorkspace() {
   const { data: authSession } = useSession();
@@ -20,67 +22,29 @@ export function RecordsWorkspace() {
   const [students, setStudents] = useState<Student[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const sessionsQuery = useSessionsQuery();
+  const studentsQuery = useStudentsQuery();
+  const loadState =
+    sessionsQuery.isLoading || studentsQuery.isLoading
+      ? "loading"
+      : sessionsQuery.isError || studentsQuery.isError
+        ? "error"
+        : "ready";
+  const loadError =
+    sessionsQuery.error instanceof Error
+      ? sessionsQuery.error.message
+      : studentsQuery.error instanceof Error
+        ? studentsQuery.error.message
+        : null;
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoadState("loading");
-      setLoadError(null);
-      try {
-        const [sRes, stRes] = await Promise.all([
-          fetch("/api/sessions"),
-          fetch("/api/students"),
-        ]);
-        if (!sRes.ok) throw new Error("수업 목록을 불러오지 못했습니다.");
-        if (!stRes.ok) throw new Error("학생 목록을 불러오지 못했습니다.");
-        const rawSessions = (await sRes.json()) as {
-          id: number;
-          studentId: number | null;
-          start: string;
-          end: string;
-          place: string;
-          notes: string;
-          understanding: string;
-          focus: string;
-          homework: { id: number; text: string; done: boolean }[];
-        }[];
-        const rawStudents = (await stRes.json()) as Student[];
-        if (cancelled) return;
-        setSessions(
-          rawSessions.map(
-            (row): Session => ({
-              id: row.id,
-              studentId: row.studentId,
-              start: new Date(row.start),
-              end: new Date(row.end),
-              place: row.place,
-              notes: row.notes,
-              understanding: row.understanding as Understanding,
-              focus: row.focus as Focus,
-              homework: row.homework,
-            }),
-          ),
-        );
-        setStudents(rawStudents);
-        setLoadState("ready");
-      } catch (e) {
-        if (!cancelled) {
-          setLoadError(
-            e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.",
-          );
-          setLoadState("error");
-        }
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (sessionsQuery.data) setSessions(sessionsQuery.data);
+  }, [sessionsQuery.data]);
+
+  useEffect(() => {
+    if (studentsQuery.data) setStudents(studentsQuery.data);
+  }, [studentsQuery.data]);
 
   useEffect(() => {
     if (loadState !== "ready") return;
@@ -99,7 +63,11 @@ export function RecordsWorkspace() {
 
   const onSessionChange = useCallback((next: Session) => {
     setSessions((prev) => prev.map((s) => (s.id === next.id ? next : s)));
-  }, []);
+    queryClient.setQueryData<Session[]>(queryKeys.sessions, (prev) =>
+      prev?.map((s) => (s.id === next.id ? next : s)),
+    );
+    void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
+  }, [queryClient]);
 
   const onDeleted = useCallback((id: number) => {
     setSessions((prev) => {
@@ -110,7 +78,11 @@ export function RecordsWorkspace() {
       });
       return next;
     });
-  }, []);
+    queryClient.setQueryData<Session[]>(queryKeys.sessions, (prev) =>
+      prev?.filter((s) => s.id !== id),
+    );
+    void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
+  }, [queryClient]);
 
   const onSessionCreated = useCallback((created: Session) => {
     setSessions((prev) => {
@@ -119,8 +91,15 @@ export function RecordsWorkspace() {
       );
       return next;
     });
+    queryClient.setQueryData<Session[]>(queryKeys.sessions, (prev) =>
+      [created, ...(prev ?? [])].sort(
+        (a, b) => b.start.getTime() - a.start.getTime(),
+      ),
+    );
+    void queryClient.invalidateQueries({ queryKey: queryKeys.students });
+    void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
     setActiveId(created.id);
-  }, []);
+  }, [queryClient]);
 
   const activeSession =
     activeId != null ? (sessions.find((s) => s.id === activeId) ?? null) : null;

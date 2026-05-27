@@ -3,6 +3,8 @@
 import { useTutorStore, useTzData } from "@/store";
 import { TZ_CATALOG } from "@/lib/constants";
 import { nowInTz } from "@/lib/utils";
+import { queryKeys } from "@/hooks/useAppQueries";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -11,6 +13,7 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
   const toggleExtra  = useTutorStore((s) => s.toggleExtraTz);
   const addExtra     = useTutorStore((s) => s.addExtraTz);
   const removeExtra  = useTutorStore((s) => s.removeExtraTz);
+  const queryClient   = useQueryClient();
 
   const [now, setNow] = useState(() => new Date());
   const [addSel, setAddSel] = useState("");
@@ -94,6 +97,9 @@ export function TzPanel({ open, onClose }: { open: boolean; onClose: () => void 
                       : "타임존 저장에 실패했습니다.",
                   );
                 }
+                queryClient.setQueryData(queryKeys.preferences, {
+                  primaryTimezone: next.timeZone,
+                });
               } catch (e) {
                 setPrimary(previousId);
                 setError(

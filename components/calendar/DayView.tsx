@@ -13,6 +13,7 @@ import {
   snapTo15,
   topPxForWallClockDate,
   wallClockDateInTimeZone,
+  sessionStatusInPrimaryTimezone,
 } from "@/lib/utils";
 import { HOUR_HEIGHT_PX } from "@/lib/constants";
 
@@ -37,6 +38,7 @@ export function DayView({
   const creating = useRef<{ sMin: number; eMin: number } | null>(null);
 
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
   const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
   const extraTz = tzData.filter((t) => t.on && !t.primary);
   const daySessions = useMemo(
@@ -211,8 +213,14 @@ export function DayView({
 
           {daySessions.map((session) => {
             const student = students.find((st) => st.id === session.studentId);
-            const past = session.end < now;
-            const ongoing = session.start <= now && now < session.end;
+            const status = sessionStatusInPrimaryTimezone(
+              session,
+              now,
+              primaryOffset,
+              primaryTimeZone,
+            );
+            const past = status === "completed";
+            const ongoing = status === "ongoing";
             return (
               <SessionBlock
                 key={session.id}

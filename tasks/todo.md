@@ -1,3 +1,155 @@
+## Data Layer Migration Plan
+
+- [x] Choose the data-fetching library and install it.
+- [x] Add a global query provider in the app root.
+- [x] Create shared API fetcher and query key definitions.
+- [x] Migrate low-risk read queries first: preferences and students.
+- [x] Migrate shared session queries used by dashboard, records, and reports.
+- [x] Add initial mutation cache updates and invalidation rules for students, sessions, preferences, and reports.
+- [x] Handle calendar range queries with range-specific query keys.
+- [ ] Verify page navigation reduces repeated API calls in the browser network panel.
+
+## Review
+
+- Installed `@tanstack/react-query`.
+- Added `components/query/QueryProvider.tsx` and wrapped the app in `app/layout.tsx`.
+- Added `lib/api/client.ts` and `hooks/useAppQueries.ts` with shared query keys and hooks.
+- Moved `AppShell` preferences loading to `usePreferenceQuery`.
+- Moved `/students`, `/dashboard`, `/records`, `/reports`, and `/calendar` read queries onto TanStack Query.
+- Added cache updates/invalidation for student add/edit/delete/unlink, session create/update/delete, report create/update, and timezone preference updates.
+- Calendar sessions now use range-specific query keys via `["calendarSessions", from, to]`.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+
+## Data Fetching Problem Documentation
+
+- [x] Inspect current client-side API fetch locations.
+- [x] Document the repeated API call problem in `docs/problem_shooting.md`.
+- [x] Review the written note for clarity.
+
+## Review
+
+- Added a problem-shooting note describing repeated API calls during page navigation.
+- Explained what "no data layer" means in this app: pages fetch directly and do not share cache, stale state, or invalidation rules.
+- Documented likely improvement paths: SWR/TanStack Query, Zustand cache expansion, and moving AppShell/preferences loading into a shared layout/data layer.
+
+## Primary Timezone Session Status
+
+- [x] Find direct `Date` comparisons used for session status badges.
+- [x] Add a primary-timezone session status helper.
+- [x] Apply it to calendar, session modal, records, and dashboard status displays.
+- [x] Verify static checks.
+
+## Review
+
+- Added `sessionStatusInPrimaryTimezone` and `primaryWallClockDateFromKstDate` in `lib/utils.ts`.
+- Calendar week/day session highlighting, session modal status, records badges, and dashboard today-session badges now use primary timezone status.
+- Remaining direct `session.end < now` usage is in `app/api/parent/students/route.ts` for choosing the last past lesson, not for a visible status badge.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+
+## Favicon Debugging
+
+- [x] Confirm `app/favicon.ico` exists and is a valid ICO.
+- [x] Explicitly declare favicon metadata.
+- [x] Verify static checks.
+
+## Review
+
+- `app/favicon.ico` exists and is a valid 32x32 ICO.
+- Added explicit `metadata.icons` entries in `app/layout.tsx`.
+- `npx tsc --noEmit` passes.
+
+## Extra Timezone Hour Labels
+
+- [x] Change extra timezone axis labels from `HH` to `HH:00`.
+- [x] Verify static checks.
+
+## Review
+
+- Updated extra timezone hour labels in week and day calendar views to display `HH:00`.
+- `npx tsc --noEmit` passes.
+
+## Calendar Now Line Double Offset
+
+- [x] Identify why the now-line only works for Seoul/Tokyo.
+- [x] Add a wall-clock-only pixel helper for current-time indicators.
+- [x] Use it in week/day now-line rendering.
+- [x] Verify static checks.
+
+## Review
+
+- The now-line was wrong outside Seoul/Tokyo because a primary timezone wall-clock date was being passed through KST-to-primary conversion again.
+- Week/day now-lines now use `topPxForWallClockDate`, which maps the primary timezone wall-clock hour directly onto the 0-23 grid.
+- Normalized `Intl` hour `24` to `00`; this fixes midnight-adjacent zones like America/Chicago where `Intl` can return `24:xx`.
+- Verified sample wall-clock positions: Seoul/Tokyo 14:15, Beijing 13:15, Bangkok 12:15, Kolkata 10:45, UTC 05:15, London 06:15, Paris 07:15, New York 01:15, Chicago 00:15, Denver 23:15, LA 22:15.
+- `npx tsc --noEmit` passes.
+
+## Timezone Offset Audit
+
+- [x] Compare `TZ_CATALOG` offsets against runtime timezone data.
+- [x] Identify fixed-offset vs DST-sensitive mismatches.
+- [x] Apply `Intl` timezone formatting to the timezone panel current-time list.
+- [x] Recommend or apply the safest calculation fix.
+
+## Review
+
+- Current runtime check showed Beijing `Asia/Shanghai` is UTC+8 and the displayed current time matches 11:46 when UTC is 03:46.
+- Fixed-offset Asian zones in the catalog are correct: Seoul/Tokyo +9, Beijing +8, Bangkok +7, Kolkata +5:30.
+- DST-sensitive zones are currently wrong in late May: London should be +1, Paris +2, New York -4, Chicago -5, Denver -6, LA -7.
+- The safer fix is to stop trusting static `offset` for calculations and derive offsets/current wall-clock time from `timeZone` with `Intl.DateTimeFormat`.
+- Updated `nowInTz` to accept an IANA timezone and calculate current wall-clock time with `Intl`.
+- Updated `TzPanel` to pass `primary.timeZone` / `t.timeZone` instead of static offsets.
+- Verified current runtime output: Beijing 11:49, Seoul 12:49.
+- `npx tsc --noEmit` passes.
+
+## Calendar Now Line Timezone
+
+- [x] Confirm now-line currently uses local `Date#getHours`.
+- [x] Add primary timezone wall-clock helper.
+- [x] Apply primary timezone now to week/day now-line and today highlighting.
+- [x] Verify static checks.
+
+## Review
+
+- Added `wallClockDateInTimeZone` in `lib/utils.ts`.
+- Week, day, and month calendar today highlighting now use the primary timezone wall-clock date.
+- Week/day now-line position now uses the primary timezone wall-clock time instead of the browser local hour.
+- Calendar `now` state refreshes every minute while the calendar page is open.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes after clearing a stale `.next` cache. Next.js still emits the existing Edge Runtime warning from `next-auth/jwt`/`jose`.
+
+## Prisma Migration Directory Cleanup
+
+- [x] Identify why `P3015` happened during build.
+- [x] Remove empty legacy migration directories.
+- [x] Verify Neon DB connectivity and migration status.
+- [x] Keep app build separate from production DB migration.
+- [x] Verify production build.
+
+## Review
+
+- `P3015` happened because legacy migration directories were still present without `migration.sql` files.
+- Removed the empty legacy migration directories; only `20260526070000_init_postgres` remains.
+- Verified Neon connectivity with a simple `SELECT 1`.
+- Ran `npx prisma migrate deploy`; Prisma reports no pending migrations.
+- Confirmed the Neon DB has `Account`, `User`, `Session`, `_prisma_migrations`, and related app tables.
+- Changed `package.json` build back to `prisma generate && next build`; production migrations stay in `npm run db:deploy`.
+- `npm run build` passes. Next.js emitted Edge Runtime warnings from `next-auth/jwt`/`jose`, but the build completed.
+
+## App Error Pages
+
+- [x] Inspect existing UI tone and shared controls.
+- [x] Add a styled global runtime error page.
+- [x] Add a styled not-found page.
+- [x] Verify static checks.
+
+## Review
+
+- Added `app/error.tsx` with the app logo, navy theme actions, retry, and home navigation.
+- Added `app/not-found.tsx` with a styled 404 page and home/login navigation.
+- `npx tsc --noEmit` passes.
+
 ## Middleware Auth Cookie Name
 
 - [x] Identify deployed Auth.js session cookie name.

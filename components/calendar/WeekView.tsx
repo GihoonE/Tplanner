@@ -6,7 +6,7 @@ import { SessionBlock } from "./SessionBlock";
 import {
   addDays, sameDay, sessionsForDay,
   snapTo15, primaryMinToKst, extraHourLabel, wallClockDateInTimeZone,
-  topPxForWallClockDate,
+  topPxForWallClockDate, sessionStatusInPrimaryTimezone,
 } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO, HOUR_HEIGHT_PX } from "@/lib/constants";
@@ -36,6 +36,7 @@ export function WeekView({
   const [anchorWeekStart, setAnchorWeekStart] = useState(() => new Date(curWeekStart));
 
   const primaryOffset  = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
   const primaryNow     = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
   const extraTz        = tzData.filter((t) => t.on && !t.primary);
   const gutterWidthPx  = 64 + extraTz.length * 44;
@@ -318,8 +319,14 @@ export function WeekView({
                   {/* Session blocks */}
                   {daySessions.map((s) => {
                     const student = students.find((st) => st.id === s.studentId);
-                    const past    = s.end < now;
-                    const ongoing = s.start <= now && now < s.end;
+                    const status = sessionStatusInPrimaryTimezone(
+                      s,
+                      now,
+                      primaryOffset,
+                      primaryTimeZone,
+                    );
+                    const past    = status === "completed";
+                    const ongoing = status === "ongoing";
                     return (
                       <SessionBlock
                         key={s.id}

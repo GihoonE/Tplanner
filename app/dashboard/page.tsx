@@ -7,35 +7,10 @@ import { AppShell } from "@/components/layout/AppShell";
 import { TzPanel } from "@/components/calendar/TzPanel";
 import { useTzData } from "@/store";
 import { Badge } from "@/components/ui/Badge";
-import { fmtTz, sameDay } from "@/lib/utils";
+import { fmtTz, sameDay, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
-import type { Focus, Session, Student, Understanding } from "@/types";
-
-type ApiSessionRow = {
-  id: number;
-  studentId: number | null;
-  start: string;
-  end: string;
-  place: string;
-  notes: string;
-  understanding: string;
-  focus: string;
-  homework: { id: number; text: string; done: boolean }[];
-};
-
-function apiSessionToSession(row: ApiSessionRow): Session {
-  return {
-    id: row.id,
-    studentId: row.studentId,
-    start: new Date(row.start),
-    end: new Date(row.end),
-    place: row.place,
-    notes: row.notes,
-    understanding: row.understanding as Understanding,
-    focus: row.focus as Focus,
-    homework: row.homework,
-  };
-}
+import { useSessionsQuery, useStudentsQuery } from "@/hooks/useAppQueries";
+import type { Session, Student } from "@/types";
 
 function isSameMonth(date: Date, now: Date) {
   return (
@@ -61,54 +36,32 @@ export default function DashboardPage() {
   const [tzOpen, setTzOpen] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const sessionsQuery = useSessionsQuery();
+  const studentsQuery = useStudentsQuery();
+  const loadState =
+    sessionsQuery.isLoading || studentsQuery.isLoading
+      ? "loading"
+      : sessionsQuery.isError || studentsQuery.isError
+        ? "error"
+        : "ready";
+  const loadError =
+    sessionsQuery.error instanceof Error
+      ? sessionsQuery.error.message
+      : studentsQuery.error instanceof Error
+        ? studentsQuery.error.message
+        : null;
   const [now, setNow] = useState(() => new Date());
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
 
   useEffect(() => {
-    let cancelled = false;
+    if (sessionsQuery.data) setSessions(sessionsQuery.data);
+  }, [sessionsQuery.data]);
 
-    async function loadDashboardData() {
-      setLoadState("loading");
-      setLoadError(null);
-      try {
-        const [sessionsRes, studentsRes] = await Promise.all([
-          fetch("/api/sessions"),
-          fetch("/api/students"),
-        ]);
-        if (!sessionsRes.ok) {
-          throw new Error("수업 데이터를 불러오지 못했습니다.");
-        }
-        if (!studentsRes.ok) {
-          throw new Error("학생 데이터를 불러오지 못했습니다.");
-        }
-
-        const rawSessions = (await sessionsRes.json()) as ApiSessionRow[];
-        const rawStudents = (await studentsRes.json()) as Student[];
-        if (cancelled) return;
-
-        setSessions(rawSessions.map(apiSessionToSession));
-        setStudents(rawStudents);
-        setLoadState("ready");
-      } catch (e) {
-        if (!cancelled) {
-          setLoadState("error");
-          setLoadError(
-            e instanceof Error ? e.message : "대시보드 데이터를 불러오지 못했습니다.",
-          );
-        }
-      }
-    }
-
-    loadDashboardData();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => {
+    if (studentsQuery.data) setStudents(studentsQuery.data);
+  }, [studentsQuery.data]);
 
   useEffect(() => {
     const tick = () => setNow(new Date());
@@ -262,8 +215,14 @@ export default function DashboardPage() {
             )}
             {todaySessions.map((s) => {
               const st      = s.studentId == null ? undefined : studentMap.get(s.studentId);
-              const ongoing = s.start <= now && now < s.end;
-              const done    = s.end < now;
+              const status = sessionStatusInPrimaryTimezone(
+                s,
+                now,
+                primaryOffset,
+                primaryTimeZone,
+              );
+              const ongoing = status === "ongoing";
+              const done    = status === "completed";
               return (
                 <div key={s.id}
                   className={`flex items-center gap-4 bg-white rounded-2xl border p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer
