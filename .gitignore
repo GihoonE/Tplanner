@@ -41,3 +41,5 @@ Thumbs.db
 
 # IDE (선택: 팀에서 공유하면 해당 줄 제거)
 .idea/
+
+tasks/

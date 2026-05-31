@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { TzPanel } from "@/components/calendar/TzPanel";
 import { useTzData } from "@/store";
 import { Badge } from "@/components/ui/Badge";
+import {Button} from "@/components/ui/Button";
 import { fmtTz, sameDay, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { useSessionsQuery, useStudentsQuery } from "@/hooks/useAppQueries";
@@ -147,13 +148,9 @@ export default function DashboardPage() {
             오늘 {now.getMonth() + 1}월 {now.getDate()}일 {["일","월","화","수","목","금","토"][now.getDay()]}요일 — 수업 {todaySessions.length}건
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setTzOpen(true)}
-          className="text-[13px] font-bold px-4 py-2 rounded-xl bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 transition-colors shadow-sm"
-        >
-          타임존 설정
-        </button>
+        <Button variant="primary" size="md" onClick={() => setTzOpen(true)}>
+            타임존 설정
+          </Button>
       </div>
       <TzPanel open={tzOpen} onClose={() => setTzOpen(false)} />
 

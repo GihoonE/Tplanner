@@ -1,3 +1,4 @@
+- DB cascade 삭제가 있는 리소스(Student 등)를 가볍게 `{ ok, id }`로 반환하도록 바꾸면, 프론트에서 관련 React Query cache(sessions, calendarSessions, reports)를 반드시 invalidate하거나 직접 제거한다.
 - 최적화 제안을 문서화할 때 "작업량"은 small/medium/large만 쓰지 말고, 어떤 파일/쿼리/검증을 어떻게 바꿀지 실행 단계까지 함께 적는다.
 - 기능 구현 범위를 말할 때는 "완료된 것"과 "아직 안 된 것"을 분리해서 표현한다. 특히 사용자가 요청한 핵심 기능(예: 스크롤 전환)과 선행 작업(예: 데이터 조회/표시)을 혼동해서 완료처럼 말하지 않는다.
 - `next-auth/react`의 `useSession()`이나 `signIn()`처럼 클라이언트 세션 컨텍스트에 의존하는 훅/API를 도입할 때는 루트 또는 해당 화면 범위가 `SessionProvider`로 감싸져 있는지 같이 확인한다.

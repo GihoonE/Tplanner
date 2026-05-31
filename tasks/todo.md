@@ -27,6 +27,22 @@
 - `npx prisma migrate status` correctly reports the new index migration as pending; it was not applied to the shared Neon database in this code-refactor pass.
 - Remaining follow-up: complete the larger React Query/Zustand ownership cleanup for server rows, and decide whether to convert remaining `<img>` lint warnings to `next/image`.
 
+## Calendar Hover Time Guide
+
+- [x] Inspect week/day calendar grid hover and session block styling.
+- [x] Add horizontal hover guide line to day view.
+- [x] Add horizontal hover guide line to week view.
+- [x] Add session block hover affordance.
+- [x] Verify static checks.
+
+## Review
+
+- Added a horizontal dashed hover guide in day and week calendar grids so users can align the cursor with the left time axis before starting a drag-create action.
+- The hover guide is pointer-event transparent and clamped within the 24-hour grid, so it does not block dragging, resizing, or clicking sessions.
+- Added visible hover affordance to session blocks with lift, brightness, ring, and higher stacking order.
+- Added the missing `session-block` marker class to session DOM nodes, matching the existing grid guard that avoids starting drag-create from an existing session.
+- Verified `npx tsc --noEmit` and `npm run lint`; lint passes with the existing seven `<img>` warnings.
+
 ## User Timezone Preferences
 
 - [x] Inspect current global preference model and API.

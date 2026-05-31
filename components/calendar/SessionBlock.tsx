@@ -54,7 +54,7 @@ export function SessionBlock({
 
   return (
     <div
-      className={`absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity] z-[2] hover:z-[5] ${student ? "" : "session-new"}`}
+      className={`session-block absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity,filter] z-[2] hover:z-[9] hover:-translate-y-0.5 hover:brightness-105 hover:ring-2 hover:ring-white/75 ${student ? "" : "session-new"}`}
       style={{
         top:          topPx,
         height:       hPx,

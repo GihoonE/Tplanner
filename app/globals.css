@@ -66,6 +66,29 @@ body {
   box-shadow: 0 0 0 3px rgba(239,68,68,.2);
 }
 
+/* Hover time guide */
+.time-hover-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 7;
+  pointer-events: none;
+  border-top: 1px dashed rgba(14, 116, 144, .62);
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .85));
+}
+.time-hover-line::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, .14);
+}
+
 /* Drag ghost */
 .drag-ghost {
   position: absolute;

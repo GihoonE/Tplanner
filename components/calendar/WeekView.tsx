@@ -34,6 +34,7 @@ export function WeekView({
   const [hourHeightPx, setHourHeightPx] = useState(HOUR_HEIGHT_PX);
   const [dayWidthPx, setDayWidthPx] = useState(MIN_DAY_WIDTH_PX);
   const [anchorWeekStart, setAnchorWeekStart] = useState(() => new Date(curWeekStart));
+  const [hoverGuide, setHoverGuide] = useState<{top: number; di: number;} | null>(null);
 
   const primaryOffset  = getPrimaryOffset(tzData);
   const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
@@ -179,6 +180,25 @@ export function WeekView({
   const nowTop = topPxForWallClockDate(primaryNow, hourHeightPx);
   const gridHeightPx = hourHeightPx * 24;
   const totalDayWidthPx = days.length * dayWidthPx;
+  const handleColsMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!colsRef.current) return;
+
+      const rect = colsRef.current.getBoundingClientRect();
+
+      const top = Math.max(0, Math.min(gridHeightPx, e.clientY - rect.top));
+      const x = e.clientX - rect.left;
+      const di = Math.floor(x / dayWidthPx);
+
+      if (di < 0 || di >= days.length) {
+        setHoverGuide(null);
+        return;
+      }
+
+      setHoverGuide({ top, di });
+    },
+    [gridHeightPx, dayWidthPx, days.length],
+  );
 
   function syncHeaderScroll(left: number) {
     if (!headerScrollRef.current) return;
@@ -307,6 +327,8 @@ export function WeekView({
           {/* Day columns */}
           <div
             ref={colsRef}
+            onMouseMove={handleColsMouseMove}
+            onMouseLeave = {() => setHoverGuide(null)}
             className="relative grid"
             style={{
               gridTemplateColumns: `repeat(${days.length}, ${dayWidthPx}px)`,
@@ -365,6 +387,16 @@ export function WeekView({
                 </div>
               );
             })}
+            {hoverGuide !== null && (
+              <div
+                className="time-hover-line"
+                style={{
+                  top: hoverGuide.top,
+                  left: hoverGuide.di * dayWidthPx,
+                  width: dayWidthPx,
+                }}
+              />
+            )}
           </div>
 
           {/* Drag ghost */}

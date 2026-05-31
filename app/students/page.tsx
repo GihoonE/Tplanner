@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { AddStudentModal } from "@/components/students/AddStudentModal";
 import { EditStudentModal } from "@/components/students/EditStudentModal";
 import { queryKeys, useStudentsQuery } from "@/hooks/useAppQueries";
-import type { Student } from "@/types";
+import type { Session, Student } from "@/types";
 
 const STATUS_BADGE: Record<
   string,
@@ -215,6 +215,15 @@ export default function StudentsPage() {
     setUnlinkError(null);
   }, [selectedId]);
 
+  function clearStudentCascadeCache(studentId: number) {
+    queryClient.setQueryData<Session[]>(queryKeys.sessions, (prev) =>
+      prev?.filter((session) => session.studentId !== studentId),
+    );
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+    void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
+  }
+
   // useEffect -> 화면 그린 다음에 실행되는 코드. 즉 렌더링 이후에 실행되는 것으로
   // UI 작업을 제외한 것을 이 함수로 실행.
 
@@ -291,6 +300,7 @@ export default function StudentsPage() {
         queryKeys.studentsList(studentListStatus),
         (prev) => prev?.filter((item) => item.id !== student.id),
       );
+      clearStudentCascadeCache(student.id);
     } catch (e) {
       setUnlinkError(
         e instanceof Error ? e.message : "학생 연결 해제에 실패했습니다.",
@@ -367,6 +377,7 @@ export default function StudentsPage() {
             queryKeys.studentsList(studentListStatus),
             (prev) => prev?.filter((x) => x.id !== id),
           );
+          clearStudentCascadeCache(id);
         }}
       />
 

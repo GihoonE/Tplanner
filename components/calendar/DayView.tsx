@@ -31,6 +31,7 @@ export function DayView({
   const curDay = useTutorStore((s) => s.curDay);
   const openModal = useTutorStore((s) => s.openModal);
   const [hourHeightPx, setHourHeightPx] = useState(HOUR_HEIGHT_PX);
+  const [hoverTopPx, setHoverTopPx] = useState<number | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -135,6 +136,13 @@ export function DayView({
     [curDay, hourHeightPx, onCreateRange, primaryOffset],
   );
 
+  const onGridMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const top = Math.max(0, Math.min(gridHeightPx, e.clientY - rect.top));
+    setHoverTopPx(top);
+  }, [gridHeightPx]);
+
   return (
     <div
       className="flex-1 flex flex-col overflow-hidden"
@@ -206,6 +214,8 @@ export function DayView({
 
         <div
           ref={gridRef}
+          onMouseMove={onGridMouseMove}
+          onMouseLeave={() => setHoverTopPx(null)}
           onMouseDown={onGridMouseDown}
           className="relative min-w-0 flex-1 overflow-hidden bg-white"
           style={{ minHeight: gridHeightPx }}
@@ -252,6 +262,9 @@ export function DayView({
           })}
 
           {isToday && <div className="now-line" style={{ top: nowTop }} />}
+          {hoverTopPx !== null && (
+            <div className="time-hover-line" style={{ top: hoverTopPx }} />
+          )}
 
           <div ref={ghostRef} className="drag-ghost" style={{ position: "absolute" }} />
 
