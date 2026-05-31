@@ -5,7 +5,6 @@ import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
 import { SessionBlock } from "./SessionBlock";
 import {
   extraHourLabel,
-  fmtTz,
   formatFullDate,
   getPrimaryOffset,
   primaryMinToKst,
@@ -47,6 +46,10 @@ export function DayView({
         (a, b) => a.start.getTime() - b.start.getTime(),
       ),
     [curDay, sessions],
+  );
+  const studentsById = useMemo(
+    () => new Map(students.map((student) => [student.id, student])),
+    [students],
   );
   const isToday =
     curDay.getFullYear() === primaryNow.getFullYear() &&
@@ -212,7 +215,10 @@ export function DayView({
           ))}
 
           {daySessions.map((session) => {
-            const student = students.find((st) => st.id === session.studentId);
+            const student =
+              session.studentId == null
+                ? undefined
+                : studentsById.get(session.studentId);
             const status = sessionStatusInPrimaryTimezone(
               session,
               now,

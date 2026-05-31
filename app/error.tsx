@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 export default function ErrorPage({
@@ -40,12 +41,12 @@ export default function ErrorPage({
           >
             다시 시도
           </button>
-          <a
+          <Link
             href="/"
             className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-600 transition-colors hover:bg-slate-50"
           >
             홈으로 이동
-          </a>
+          </Link>
         </div>
 
         {error.digest && (

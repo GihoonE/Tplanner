@@ -26,11 +26,15 @@ export type AppPreference = {
 export const queryKeys = {
   preferences: ["preferences"] as const,
   students: ["students"] as const,
+  studentsList: (status: StudentListStatus = "active") =>
+    ["students", status] as const,
   sessions: ["sessions"] as const,
   reports: ["reports"] as const,
   calendarSessions: (from: string, to: string) =>
     ["calendarSessions", from, to] as const,
 };
+
+export type StudentListStatus = "active" | "inactive" | "all";
 
 export function apiSessionToSession(row: ApiSessionRow): Session {
   return {
@@ -53,10 +57,10 @@ export function usePreferenceQuery() {
   });
 }
 
-export function useStudentsQuery() {
+export function useStudentsQuery(status: StudentListStatus = "active") {
   return useQuery({
-    queryKey: queryKeys.students,
-    queryFn: () => apiGet<Student[]>("/api/students"),
+    queryKey: queryKeys.studentsList(status),
+    queryFn: () => apiGet<Student[]>(`/api/students?status=${status}`),
   });
 }
 

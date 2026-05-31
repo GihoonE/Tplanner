@@ -61,6 +61,26 @@ export function MonthView() {
       ),
     [anchorMonth],
   );
+  const studentsById = useMemo(
+    () => new Map(students.map((student) => [student.id, student])),
+    [students],
+  );
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, typeof sessions>();
+    months.forEach((month) => {
+      monthCells(month).forEach(({ date }) => {
+        const key = date.toISOString().slice(0, 10);
+        if (map.has(key)) return;
+        map.set(
+          key,
+          sessions
+            .filter((session) => sameDay(session.start, date))
+            .sort((a, b) => a.start.getTime() - b.start.getTime()),
+        );
+      });
+    });
+    return map;
+  }, [months, sessions]);
 
   useEffect(() => {
     if (scrollUpdateRef.current) {
@@ -158,9 +178,7 @@ export function MonthView() {
               >
                 {cells.map(({ date, other }, i) => {
                   const tod = sameDay(date, primaryNow);
-                  const daySes = sessions
-                    .filter((s) => sameDay(s.start, date))
-                    .sort((a, b) => a.start.getTime() - b.start.getTime());
+                  const daySes = sessionsByDay.get(date.toISOString().slice(0, 10)) ?? [];
                   return (
                     <div
                       key={`${key}-${i}`}
@@ -175,7 +193,8 @@ export function MonthView() {
                       </div>
 
                       {daySes.slice(0, 3).map((s) => {
-                        const st = students.find((x) => x.id === s.studentId);
+                        const st =
+                          s.studentId == null ? undefined : studentsById.get(s.studentId);
                         const chip = {
                           background: resolveAvatarBg(st?.color ?? "s-blue"),
                           color: "#fff",

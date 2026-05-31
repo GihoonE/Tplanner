@@ -52,6 +52,22 @@ export function WeekView({
     () => weekStarts.flatMap((week) => Array.from({ length: 7 }, (_, i) => addDays(week, i))),
     [weekStarts]
   );
+  const studentsById = useMemo(
+    () => new Map(students.map((student) => [student.id, student])),
+    [students],
+  );
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, typeof sessions>();
+    days.forEach((day) => {
+      map.set(
+        weekKey(day),
+        sessionsForDay(sessions, day).sort(
+          (a, b) => a.start.getTime() - b.start.getTime(),
+        ),
+      );
+    });
+    return map;
+  }, [days, sessions]);
 
   // ── Drag-to-create refs ────────────────────────────────────────────────────
   const creating = useRef<{ di: number; date: Date; sMin: number; eMin: number } | null>(null);
@@ -161,7 +177,6 @@ export function WeekView({
   );
 
   const nowTop = topPxForWallClockDate(primaryNow, hourHeightPx);
-  const todayIndex = days.findIndex((d) => sameDay(d, primaryNow));
   const gridHeightPx = hourHeightPx * 24;
   const totalDayWidthPx = days.length * dayWidthPx;
 
@@ -300,9 +315,7 @@ export function WeekView({
             }}
           >
             {days.map((d, di) => {
-              const daySessions = sessionsForDay(sessions, d).sort(
-                (a, b) => a.start.getTime() - b.start.getTime(),
-              );
+              const daySessions = sessionsByDay.get(weekKey(d)) ?? [];
               const isToday     = sameDay(d, primaryNow);
 
               return (
@@ -318,7 +331,8 @@ export function WeekView({
 
                   {/* Session blocks */}
                   {daySessions.map((s) => {
-                    const student = students.find((st) => st.id === s.studentId);
+                    const student =
+                      s.studentId == null ? undefined : studentsById.get(s.studentId);
                     const status = sessionStatusInPrimaryTimezone(
                       s,
                       now,

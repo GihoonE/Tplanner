@@ -1,10 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTutorStore } from "@/store";
 import { visibleSlice, topPxForDate, heightPxForDuration, fmtTz } from "@/lib/utils";
-import { getPrimaryOffset } from "@/lib/utils";
-import { HOUR_HEIGHT_PX } from "@/lib/constants";
 import { resolveAvatarBg } from "@/lib/studentColor";
 import type { Session, Student } from "@/types";
 

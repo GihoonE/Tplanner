@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+    const now = new Date();
     if (invitation.revokedAt) {
       return NextResponse.json(
         { error: "취소된 초대 코드입니다." },
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-    if (invitation.expiresAt <= new Date()) {
+    if (invitation.expiresAt <= now) {
       return NextResponse.json(
         { error: "만료된 초대 코드입니다." },
         { status: 410 },
@@ -67,6 +68,19 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const accepted = await tx.studentInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          acceptedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { acceptedAt: now },
+      });
+      if (accepted.count !== 1) {
+        return null;
+      }
+
       const link = await tx.studentParent.upsert({
         where: {
           studentId_parentId: {
@@ -81,13 +95,14 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const accepted = await tx.studentInvitation.update({
-        where: { id: invitation.id },
-        data: { acceptedAt: new Date() },
-      });
-
-      return { link, accepted };
+      return { link, acceptedAt: now };
     });
+    if (!result) {
+      return NextResponse.json(
+        { error: "이미 사용되었거나 만료된 초대 코드입니다." },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({
       student: invitation.student,
@@ -97,8 +112,8 @@ export async function POST(request: NextRequest) {
         linkedAt: result.link.linkedAt.toISOString(),
       },
       invitation: {
-        id: result.accepted.id,
-        acceptedAt: result.accepted.acceptedAt?.toISOString() ?? null,
+        id: invitation.id,
+        acceptedAt: result.acceptedAt.toISOString(),
       },
     });
   } catch (e) {

@@ -4,6 +4,12 @@ import {
   requireViewer,
   sessionStudentAccessWhere,
 } from "@/lib/auth/permissions";
+import {
+  parseFocus,
+  parseOptionalString,
+  parsePositiveInt,
+  parseUnderstanding,
+} from "@/lib/api/validation";
 import { prisma } from "@/lib/db";
 
 /**
@@ -77,20 +83,11 @@ export async function POST(_req: NextRequest) {
       );
     }
 
-    const sidStr = String(studentId).trim();
-    if (!/^\d+$/.test(sidStr)) {
-      return NextResponse.json(
-        { error: "studentId는 양의 정수여야 합니다." },
-        { status: 400 },
-      );
+    const sidParam = parsePositiveInt(String(studentId).trim(), "studentId");
+    if (!sidParam.ok) {
+      return NextResponse.json({ error: sidParam.error }, { status: 400 });
     }
-    const sidNum = parseInt(sidStr, 10);
-    if (sidNum < 1) {
-      return NextResponse.json(
-        { error: "studentId는 양의 정수여야 합니다." },
-        { status: 400 },
-      );
-    }
+    const sidNum = sidParam.value;
 
     const startAt = new Date(start);
     const endAt = new Date(end);
@@ -105,6 +102,26 @@ export async function POST(_req: NextRequest) {
         { error: "종료 시각(end)은 시작 시각(start)보다 이후여야 합니다." },
         { status: 400 },
       );
+    }
+
+    const placeParam = parseOptionalString(place, "place");
+    if (!placeParam.ok) {
+      return NextResponse.json({ error: placeParam.error }, { status: 400 });
+    }
+    const notesParam = parseOptionalString(notes, "notes");
+    if (!notesParam.ok) {
+      return NextResponse.json({ error: notesParam.error }, { status: 400 });
+    }
+    const understandingParam = parseUnderstanding(understanding ?? "");
+    if (!understandingParam.ok) {
+      return NextResponse.json(
+        { error: understandingParam.error },
+        { status: 400 },
+      );
+    }
+    const focusParam = parseFocus(focus ?? "");
+    if (!focusParam.ok) {
+      return NextResponse.json({ error: focusParam.error }, { status: 400 });
     }
 
     const studentRow = await prisma.student.findFirst({
@@ -124,10 +141,10 @@ export async function POST(_req: NextRequest) {
         start: startAt,
         end: endAt,
         // 변수 ?? 대체제 -> 변수가 null/undefined면 오른쪽에 지정한 값 사용
-        place: place ?? "",
-        notes: notes ?? "",
-        understanding: understanding ?? "",
-        focus: focus ?? "",
+        place: placeParam.value ?? "",
+        notes: notesParam.value ?? "",
+        understanding: understandingParam.value,
+        focus: focusParam.value,
       },
     });
 

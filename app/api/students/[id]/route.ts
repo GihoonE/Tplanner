@@ -1,17 +1,17 @@
 import { NextResponse, NextRequest } from "next/server";
 import { requireInstructor } from "@/lib/auth/permissions";
-import { prisma } from "@/lib/db";
 import {
-  isValidStudentColor,
-  normalizeStoredStudentColor,
-} from "@/lib/studentColor";
+  parseOptionalBoundedInteger,
+  parseOptionalMonthString,
+  parseOptionalRequiredString,
+  parseOptionalStudentColor,
+  parseOptionalStudentStatus,
+  parsePositiveInt,
+} from "@/lib/api/validation";
+import { prisma } from "@/lib/db";
 
 function normalizeStudentStatus(status: unknown) {
   return status === "active" ? "active" : "inactive";
-}
-
-function isValidStudentStatus(status: unknown) {
-  return status === "active" || status === "inactive";
 }
 
 export async function GET(
@@ -22,9 +22,13 @@ export async function GET(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const { id } = params;
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
+    }
+
     const student = await prisma.student.findFirst({
-      where: { id: parseInt(id, 10), instructorId: instructor.userId },
+      where: { id: idParam.value, instructorId: instructor.userId },
       include: {
         sessions: {
           include: { homework: true },
@@ -62,7 +66,11 @@ export async function PATCH(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const numId = parseInt(params.id, 10);
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
+    }
+    const numId = idParam.value;
     const body = await _req.json();
     const student = await prisma.student.findFirst({
       where: { id: numId, instructorId: instructor.userId },
@@ -86,37 +94,65 @@ export async function PATCH(
       hwCompletionRate,
     } = body;
 
-    if (color != null) {
-      if (!isValidStudentColor(color)) {
-        return NextResponse.json(
-          { error: "유효하지 않은 색상입니다. (프리셋 또는 #RRGGBB)" },
-          { status: 400 },
-        );
-      }
-    }
-    if (status != null && !isValidStudentStatus(status)) {
-      return NextResponse.json(
-        { error: "상태는 active 또는 inactive여야 합니다." },
-        { status: 400 },
-      );
+    const nameParam = parseOptionalRequiredString(name, "name");
+    if (!nameParam.ok) return badRequest(nameParam.error);
+    const subjectParam = parseOptionalRequiredString(subject, "subject");
+    if (!subjectParam.ok) return badRequest(subjectParam.error);
+    const gradeParam = parseOptionalRequiredString(grade, "grade");
+    if (!gradeParam.ok) return badRequest(gradeParam.error);
+    const schoolParam = parseOptionalRequiredString(school, "school");
+    if (!schoolParam.ok) return badRequest(schoolParam.error);
+    const avatarParam = parseOptionalRequiredString(avatarChar, "avatarChar");
+    if (!avatarParam.ok) return badRequest(avatarParam.error);
+    const colorParam = parseOptionalStudentColor(color);
+    if (!colorParam.ok) return badRequest(colorParam.error);
+    const statusParam = parseOptionalStudentStatus(status);
+    if (!statusParam.ok) return badRequest(statusParam.error);
+    const startDateParam = parseOptionalMonthString(startDate, "startDate");
+    if (!startDateParam.ok) return badRequest(startDateParam.error);
+    const totalSessionsParam = parseOptionalBoundedInteger(
+      totalSessions,
+      "totalSessions",
+      0,
+      10000,
+    );
+    if (!totalSessionsParam.ok) return badRequest(totalSessionsParam.error);
+    const hwCompletionRateParam = parseOptionalBoundedInteger(
+      hwCompletionRate,
+      "hwCompletionRate",
+      0,
+      100,
+    );
+    if (!hwCompletionRateParam.ok) {
+      return badRequest(hwCompletionRateParam.error);
     }
 
     const updated = await prisma.student.update({
       where: { id: numId },
       data: {
-        ...(name != null && { name }),
-        ...(subject != null && { subject }),
-        ...(grade != null && { grade }),
-        ...(school != null && { school }),
-        ...(color != null && {
-          color: normalizeStoredStudentColor(color),
+        ...(nameParam.value !== undefined && { name: nameParam.value.trim() }),
+        ...(subjectParam.value !== undefined && {
+          subject: subjectParam.value.trim(),
         }),
-        ...(avatarChar != null && { avatarChar }),
-        ...(status != null && { status }),
-        ...(startDate != null && { startDate }),
-        ...(totalSessions != null && { totalSessions: Number(totalSessions) }),
-        ...(hwCompletionRate != null && {
-          hwCompletionRate: Number(hwCompletionRate),
+        ...(gradeParam.value !== undefined && { grade: gradeParam.value.trim() }),
+        ...(schoolParam.value !== undefined && {
+          school: schoolParam.value.trim(),
+        }),
+        ...(colorParam.value !== undefined && {
+          color: colorParam.value,
+        }),
+        ...(avatarParam.value !== undefined && {
+          avatarChar: avatarParam.value.trim(),
+        }),
+        ...(statusParam.value !== undefined && { status: statusParam.value }),
+        ...(startDateParam.value !== undefined && {
+          startDate: startDateParam.value,
+        }),
+        ...(totalSessionsParam.value !== undefined && {
+          totalSessions: totalSessionsParam.value,
+        }),
+        ...(hwCompletionRateParam.value !== undefined && {
+          hwCompletionRate: hwCompletionRateParam.value,
         }),
       },
     });
@@ -141,29 +177,27 @@ export async function DELETE(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const existing = await prisma.student.findUnique({
-      where: { id: parseInt(params.id, 10) },
-      include: {
-        sessions: {
-          include: { homework: true },
-          orderBy: { start: "desc" },
-        },
-      },
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
+    }
+
+    const existing = await prisma.student.findFirst({
+      where: { id: idParam.value, instructorId: instructor.userId },
+      select: { id: true },
     });
-    if (!existing || existing.instructorId !== instructor.userId) {
+    if (!existing) {
       return NextResponse.json(
         { error: "학생을 찾을 수 없습니다" },
         { status: 404 },
       );
     }
 
-    const { sessions, ...rest } = existing;
-    await prisma.student.delete({ where: { id: parseInt(params.id, 10) } });
+    await prisma.student.delete({ where: { id: idParam.value } });
 
     return NextResponse.json({
-      ...rest,
-      status: normalizeStudentStatus(rest.status),
-      sessions,
+      ok: true,
+      id: existing.id,
     });
   } catch (e) {
     console.error("[DELETE] /api/students/[id]", e);
@@ -172,4 +206,8 @@ export async function DELETE(
       { status: 500 },
     );
   }
+}
+
+function badRequest(error: string) {
+  return NextResponse.json({ error }, { status: 400 });
 }

@@ -4,6 +4,13 @@ import {
   requireViewer,
   sessionStudentAccessWhere,
 } from "@/lib/auth/permissions";
+import {
+  parseOptionalDate,
+  parseOptionalFocus,
+  parseOptionalString,
+  parseOptionalUnderstanding,
+  parsePositiveInt,
+} from "@/lib/api/validation";
 import { prisma } from "@/lib/db";
 
 // id로 조회
@@ -15,10 +22,14 @@ export async function GET(
     const viewer = await requireViewer();
     if (viewer.response) return viewer.response;
 
-    const { id } = params;
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
+    }
+
     const s = await prisma.lessonSession.findFirst({
       where: {
-        id: parseInt(id, 10),
+        id: idParam.value,
         student: sessionStudentAccessWhere(viewer),
       },
       include: { homework: true },
@@ -62,21 +73,18 @@ export async function PATCH(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const { id } = params;
-    const numId = parseInt(id, 10);
-    if (!Number.isFinite(numId) || numId < 1) {
-      return NextResponse.json(
-        { error: "유효한 수업 id가 아닙니다." },
-        { status: 400 },
-      );
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
     }
+    const numId = idParam.value;
 
     const existing = await prisma.lessonSession.findFirst({
       where: {
         id: numId,
         student: { instructorId: instructor.userId },
       },
-      select: { id: true },
+      select: { id: true, start: true, end: true },
     });
     if (!existing) {
       return NextResponse.json(
@@ -87,6 +95,42 @@ export async function PATCH(
 
     const body = await _req.json();
     const { place, notes, understanding, focus, start, end } = body;
+    const placeParam = parseOptionalString(place, "place");
+    if (!placeParam.ok) {
+      return NextResponse.json({ error: placeParam.error }, { status: 400 });
+    }
+    const notesParam = parseOptionalString(notes, "notes");
+    if (!notesParam.ok) {
+      return NextResponse.json({ error: notesParam.error }, { status: 400 });
+    }
+    const understandingParam = parseOptionalUnderstanding(understanding);
+    if (!understandingParam.ok) {
+      return NextResponse.json(
+        { error: understandingParam.error },
+        { status: 400 },
+      );
+    }
+    const focusParam = parseOptionalFocus(focus);
+    if (!focusParam.ok) {
+      return NextResponse.json({ error: focusParam.error }, { status: 400 });
+    }
+    const startParam = parseOptionalDate(start, "start");
+    if (!startParam.ok) {
+      return NextResponse.json({ error: startParam.error }, { status: 400 });
+    }
+    const endParam = parseOptionalDate(end, "end");
+    if (!endParam.ok) {
+      return NextResponse.json({ error: endParam.error }, { status: 400 });
+    }
+
+    const nextStart = startParam.value ?? existing.start;
+    const nextEnd = endParam.value ?? existing.end;
+    if (nextEnd <= nextStart) {
+      return NextResponse.json(
+        { error: "종료 시각(end)은 시작 시각(start)보다 이후여야 합니다." },
+        { status: 400 },
+      );
+    }
 
     //transaction: 실패시 롤백 진행
     await prisma.$transaction(async (tx) => {
@@ -95,15 +139,16 @@ export async function PATCH(
         data: {
           // ...(조건 && {key:value})
           // 조건 만족 시 값이 들어감
-          ...(place != null && { place }),
-          ...(notes != null && { notes }),
-          ...(understanding != null && { understanding }),
-          ...(focus != null && { focus }),
-          ...(start != null && { start }),
-          ...(end != null && { end }),
+          ...(placeParam.value !== undefined && { place: placeParam.value }),
+          ...(notesParam.value !== undefined && { notes: notesParam.value }),
+          ...(understandingParam.value !== undefined && {
+            understanding: understandingParam.value,
+          }),
+          ...(focusParam.value !== undefined && { focus: focusParam.value }),
+          ...(startParam.value !== undefined && { start: startParam.value }),
+          ...(endParam.value !== undefined && { end: endParam.value }),
         },
       });
-
     });
 
     const updated = await prisma.lessonSession.findFirst({
@@ -149,10 +194,14 @@ export async function DELETE(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const { id } = params;
+    const idParam = parsePositiveInt(params.id, "id");
+    if (!idParam.ok) {
+      return NextResponse.json({ error: idParam.error }, { status: 400 });
+    }
+
     const existing = await prisma.lessonSession.findFirst({
       where: {
-        id: parseInt(id, 10),
+        id: idParam.value,
         student: { instructorId: instructor.userId },
       },
       select: { id: true },
@@ -165,7 +214,7 @@ export async function DELETE(
     }
 
     const s = await prisma.lessonSession.delete({
-      where: { id: parseInt(id, 10) },
+      where: { id: idParam.value },
     });
     return NextResponse.json({
       id: s.id,

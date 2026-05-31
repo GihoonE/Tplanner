@@ -1,34 +1,48 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   requireInstructor,
   requireViewer,
   studentAccessWhere,
 } from "@/lib/auth/permissions";
-import { prisma } from "@/lib/db";
 import {
-  isValidStudentColor,
-  normalizeStoredStudentColor,
-} from "@/lib/studentColor";
+  parseBoundedInteger,
+  parseMonthString,
+  parseRequiredString,
+  parseStudentColor,
+  parseStudentStatus,
+} from "@/lib/api/validation";
+import { prisma } from "@/lib/db";
 
 function normalizeStudentStatus(status: unknown) {
   return status === "active" ? "active" : "inactive";
 }
 
-function isValidStudentStatus(status: unknown) {
-  return status === "active" || status === "inactive";
+function statusWhereFromRequest(request: NextRequest) {
+  const includeInactive = request.nextUrl.searchParams.get("includeInactive");
+  const status = request.nextUrl.searchParams.get("status");
+
+  if (includeInactive === "true" || status === "all") return {};
+  if (status === "inactive") return { status: "inactive" };
+  return { status: "active" };
 }
 
 /**
  * GET /api/students
  * 학생 목록 조회 (각 학생별 최근 수업 날짜, 이번 달 수업 수 포함)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const viewer = await requireViewer();
     if (viewer.response) return viewer.response;
 
+    const now = new Date();
+    // 올해, 이번달, 1일로 날짜 만들기
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const students = await prisma.student.findMany({
-      where: studentAccessWhere(viewer),
+      where: {
+        ...studentAccessWhere(viewer),
+        ...statusWhereFromRequest(request),
+      },
       orderBy: { id: "asc" },
       include: {
         // session 테이블을 조회해서 같이 가져오자
@@ -36,6 +50,16 @@ export async function GET() {
           // session의 start column만 가져옴
           select: { start: true, notes: true },
           orderBy: { start: "desc" },
+          take: 1,
+        },
+        _count: {
+          select: {
+            sessions: {
+              where: {
+                start: { gte: thisMonthStart },
+              },
+            },
+          },
         },
         parentLinks: {
           select: {
@@ -60,18 +84,10 @@ export async function GET() {
       },
     });
 
-    const now = new Date();
-    // 올해, 이번달, 1일로 날짜 만들기
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
     return NextResponse.json(
       // students array에서 요소 하나씩 빼서 s로 callback함수에 넘김
       students.map((s) => {
         const lastSession = s.sessions[0];
-        const thisMonthCount = s.sessions.filter(
-          (ss) => new Date(ss.start) >= thisMonthStart,
-        ).length;
-
         return {
           id: s.id,
           name: s.name,
@@ -87,7 +103,7 @@ export async function GET() {
           // 최근수업시간 toISOSTring() -> YYYYY-MM-DDTHH:mm:ss로 변환 아니면 null
           lastSessionAt: lastSession?.start.toISOString() ?? null,
           lastSessionContent: lastSession?.notes ?? null,
-          thisMonthSessionCount: thisMonthCount,
+          thisMonthSessionCount: s._count.sessions,
           parents: s.parentLinks.map((link) => ({
             id: link.parent.id,
             name: link.parent.name,
@@ -132,35 +148,48 @@ export async function POST(request: Request) {
       hwCompletionRate,
     } = await request.json();
 
-    const rawColor = color ?? "s-blue";
-    if (!isValidStudentColor(rawColor)) {
-      return NextResponse.json(
-        { error: "유효하지 않은 색상입니다. (프리셋 또는 #RRGGBB)" },
-        { status: 400 },
-      );
-    }
-    const storedColor = normalizeStoredStudentColor(rawColor);
-    const storedStatus = status ?? "active";
-    if (!isValidStudentStatus(storedStatus)) {
-      return NextResponse.json(
-        { error: "상태는 active 또는 inactive여야 합니다." },
-        { status: 400 },
-      );
+    const nameParam = parseRequiredString(name, "name");
+    if (!nameParam.ok) return badRequest(nameParam.error);
+    const subjectParam = parseRequiredString(subject, "subject");
+    if (!subjectParam.ok) return badRequest(subjectParam.error);
+    const gradeParam = parseRequiredString(grade, "grade");
+    if (!gradeParam.ok) return badRequest(gradeParam.error);
+    const schoolParam = parseRequiredString(school, "school");
+    if (!schoolParam.ok) return badRequest(schoolParam.error);
+    const avatarParam = parseRequiredString(avatarChar, "avatarChar");
+    if (!avatarParam.ok) return badRequest(avatarParam.error);
+    const startDateParam = parseMonthString(startDate, "startDate");
+    if (!startDateParam.ok) return badRequest(startDateParam.error);
+    const colorParam = parseStudentColor(color ?? "s-blue");
+    if (!colorParam.ok) return badRequest(colorParam.error);
+    const statusParam = parseStudentStatus(status ?? "active");
+    if (!statusParam.ok) return badRequest(statusParam.error);
+    const totalSessionsParam =
+      totalSessions == null
+        ? { ok: true as const, value: 0 }
+        : parseBoundedInteger(totalSessions, "totalSessions", 0, 10000);
+    if (!totalSessionsParam.ok) return badRequest(totalSessionsParam.error);
+    const hwCompletionRateParam =
+      hwCompletionRate == null
+        ? { ok: true as const, value: 0 }
+        : parseBoundedInteger(hwCompletionRate, "hwCompletionRate", 0, 100);
+    if (!hwCompletionRateParam.ok) {
+      return badRequest(hwCompletionRateParam.error);
     }
 
     // 학생 정보를 데이터베이스에 저장
     const student = await prisma.student.create({
       data: {
-        name,
-        subject,
-        grade,
-        school,
-        color: storedColor,
-        avatarChar,
-        status: storedStatus,
-        startDate,
-        totalSessions,
-        hwCompletionRate,
+        name: nameParam.value,
+        subject: subjectParam.value,
+        grade: gradeParam.value,
+        school: schoolParam.value,
+        color: colorParam.value,
+        avatarChar: avatarParam.value,
+        status: statusParam.value,
+        startDate: startDateParam.value,
+        totalSessions: totalSessionsParam.value,
+        hwCompletionRate: hwCompletionRateParam.value,
         instructorId: instructor.userId,
       },
     });
@@ -172,4 +201,8 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+function badRequest(error: string) {
+  return NextResponse.json({ error }, { status: 400 });
 }

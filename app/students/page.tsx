@@ -160,7 +160,9 @@ export default function StudentsPage() {
   const { data: authSession } = useSession();
   const readOnly = authSession?.user?.role === "parent";
   const queryClient = useQueryClient();
-  const studentsQuery = useStudentsQuery();
+  const [showInactive, setShowInactive] = useState(false);
+  const studentListStatus = showInactive ? "all" : "active";
+  const studentsQuery = useStudentsQuery(studentListStatus);
   // ── API에서 가져오는 데이터 ─────────────────────────────────────────────
   // state는 변수랑 달리 값이 바뀌면 React가 감지해 렌더링을 다시 해줌.
   const [students, setStudents] = useState<Student[]>([]);
@@ -285,6 +287,10 @@ export default function StudentsPage() {
       queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
         prev?.filter((item) => item.id !== student.id),
       );
+      queryClient.setQueryData<Student[]>(
+        queryKeys.studentsList(studentListStatus),
+        (prev) => prev?.filter((item) => item.id !== student.id),
+      );
     } catch (e) {
       setUnlinkError(
         e instanceof Error ? e.message : "학생 연결 해제에 실패했습니다.",
@@ -301,6 +307,13 @@ export default function StudentsPage() {
         <span className="text-[15px] font-extrabold text-slate-900 tracking-tight flex-1">
           학생 관리
         </span>
+        <button
+          type="button"
+          onClick={() => setShowInactive((value) => !value)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-sky-200 hover:text-sky-600"
+        >
+          {showInactive ? "활성 학생만" : "비활성 포함"}
+        </button>
         {!readOnly && (
           <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
             + 학생 추가
@@ -316,6 +329,10 @@ export default function StudentsPage() {
           setStudents((prev) => [...prev, s].sort((a, b) => a.id - b.id));
           queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
             [...(prev ?? []), s].sort((a, b) => a.id - b.id),
+          );
+          queryClient.setQueryData<Student[]>(
+            queryKeys.studentsList(studentListStatus),
+            (prev) => [...(prev ?? []), s].sort((a, b) => a.id - b.id),
           );
           setSelectedId(s.id);
         }}
@@ -334,12 +351,21 @@ export default function StudentsPage() {
           queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
             prev?.map((x) => (x.id === s.id ? { ...x, ...s } : x)),
           );
+          queryClient.setQueryData<Student[]>(
+            queryKeys.studentsList(studentListStatus),
+            (prev) => prev?.map((x) => (x.id === s.id ? { ...x, ...s } : x)),
+          );
+          void queryClient.invalidateQueries({ queryKey: queryKeys.students });
         }}
         onDeleted={(id) => {
           // filter(x): 조건을 만족하는 x만 남김
           setStudents((prev) => prev.filter((x) => x.id !== id));
           queryClient.setQueryData<Student[]>(queryKeys.students, (prev) =>
             prev?.filter((x) => x.id !== id),
+          );
+          queryClient.setQueryData<Student[]>(
+            queryKeys.studentsList(studentListStatus),
+            (prev) => prev?.filter((x) => x.id !== id),
           );
         }}
       />

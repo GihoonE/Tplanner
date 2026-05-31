@@ -28,6 +28,8 @@ model Student {
   reports          Report[]
   parentLinks      StudentParent[]
   invitations      StudentInvitation[]
+
+  @@index([instructorId, status, id])
 }
 
 
@@ -46,6 +48,9 @@ model LessonSession {
   homework     HomeworkItem[]
   reportSessions ReportSession[]
 
+  @@index([studentId, start])
+  @@index([start])
+  @@index([end])
   @@map("Session")
 }
 
@@ -55,6 +60,8 @@ model HomeworkItem {
   session   LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   text      String
   done      Boolean @default(false)
+
+  @@index([sessionId])
 }
 
 model Report {
@@ -72,6 +79,8 @@ model Report {
   sessions     ReportSession[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
+
+  @@index([studentId, updatedAt, id])
 }
 
 model ReportSession {
@@ -81,6 +90,7 @@ model ReportSession {
   session   LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@id([reportId, sessionId])
+  @@index([sessionId])
 }
 
 model AppPreference {
@@ -161,6 +171,7 @@ model StudentParent {
   linkedAt  DateTime @default(now())
 
   @@id([studentId, parentId])
+  @@index([parentId, studentId])
 }
 
 model StudentInvitation {
@@ -175,4 +186,7 @@ model StudentInvitation {
 
   student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
   instructor   User      @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, instructorId, createdAt])
+  @@index([instructorId, createdAt])
 }

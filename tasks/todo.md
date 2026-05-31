@@ -1,3 +1,32 @@
+## Optimization Refactor From FIX.md
+
+- [x] Read `OPTIMIZATION_GUIDE.md` and map the work to the harness order.
+- [x] Make the automated verification harness runnable (`npm test`, lint, typecheck).
+- [x] Fix write-boundary correctness issues for sessions, students, and invitations.
+- [x] Add targeted Prisma indexes for the hot query paths.
+- [x] Reduce common endpoint overfetching with active-first student loading.
+- [ ] Remove high-risk React Query server-state copies from focused pages/components.
+- [x] Optimize repeated render-time scans in calendar/record views.
+- [x] Run verification: tests, lint, typecheck, build, and migration checks where applicable.
+- [x] Document final results and remaining follow-up items.
+
+## Review
+
+- Added the harness-requested verification setup: `npm test` now runs Vitest with path alias support, and `npm run lint` uses ESLint flat config instead of the incompatible interactive `next lint` path.
+- Replaced the DB-backed session API test with mocked route tests so it no longer deletes real data and now covers invalid IDs, missing sessions, reversed PATCH intervals, unsupported enum values, and delete behavior.
+- Added shared API validation helpers and applied them to session/student write boundaries.
+- Session PATCH now validates partial dates against existing values and enforces `end > start`.
+- Session create/PATCH now validates `understanding` and `focus` enum strings.
+- Student create/PATCH now validates required strings, `YYYY-MM` start dates, color/status, and bounded numeric fields before Prisma writes.
+- Invitation accept now uses a transaction-local conditional write so single-use invitation state is enforced atomically.
+- `/api/students` now defaults to active students, supports `status=inactive`, `status=all`, and `includeInactive=true`, fetches only the latest session per student, and uses filtered `_count` for this-month session counts instead of loading all sessions.
+- Student management now has a toggle for active-only vs inactive-included loading.
+- Added targeted Prisma indexes and migration `20260531043000_add_query_indexes`.
+- Optimized calendar and record rendering by memoizing student lookup maps and day/session maps instead of repeated render-time `find`/`filter`/`sort` loops.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, `npx prisma validate`, and `npm run build`.
+- `npx prisma migrate status` correctly reports the new index migration as pending; it was not applied to the shared Neon database in this code-refactor pass.
+- Remaining follow-up: complete the larger React Query/Zustand ownership cleanup for server rows, and decide whether to convert remaining `<img>` lint warnings to `next/image`.
+
 ## User Timezone Preferences
 
 - [x] Inspect current global preference model and API.

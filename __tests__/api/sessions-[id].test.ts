@@ -1,57 +1,83 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { prisma } from "@/lib/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET, PATCH, DELETE } from "@/app/api/sessions/[id]/route";
 import { createGetRequest, createJsonRequest, parseResponse } from "../helpers";
 
-const createContext = (id: number) => ({ params: { id: String(id) } });
+const mocks = vi.hoisted(() => ({
+  requireViewer: vi.fn(),
+  requireInstructor: vi.fn(),
+  sessionStudentAccessWhere: vi.fn(),
+  prisma: {
+    lessonSession: {
+      findFirst: vi.fn(),
+      delete: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
+  txLessonSessionUpdate: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/permissions", () => ({
+  requireViewer: mocks.requireViewer,
+  requireInstructor: mocks.requireInstructor,
+  sessionStudentAccessWhere: mocks.sessionStudentAccessWhere,
+}));
+
+vi.mock("@/lib/db", () => ({
+  prisma: mocks.prisma,
+}));
+
+const createContext = (id: string | number) => ({ params: { id: String(id) } });
+const baseSession = {
+  id: 1,
+  studentId: 10,
+  start: new Date("2025-03-20T09:00:00.000Z"),
+  end: new Date("2025-03-20T11:00:00.000Z"),
+  place: "자택",
+  notes: "테스트 메모",
+  understanding: "",
+  focus: "",
+  homework: [],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.requireViewer.mockResolvedValue({ userId: "user_1", role: "instructor" });
+  mocks.requireInstructor.mockResolvedValue({ userId: "user_1" });
+  mocks.sessionStudentAccessWhere.mockReturnValue({ instructorId: "user_1" });
+  mocks.prisma.$transaction.mockImplementation(async (callback) =>
+    callback({
+      lessonSession: {
+        update: mocks.txLessonSessionUpdate,
+      },
+    }),
+  );
+});
 
 describe("GET /api/sessions/[id]", () => {
-  let sessionId: number;
+  it("returns an existing session", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValue(baseSession);
 
-  beforeEach(async () => {
-    await prisma.homeworkItem.deleteMany();
-    await prisma.lessonSession.deleteMany();
-    await prisma.student.deleteMany();
-
-    const student = await prisma.student.create({
-      data: {
-        name: "테스트",
-        subject: "수학",
-        grade: "고1",
-        school: "테스트고",
-        color: "s-blue",
-        avatarChar: "테",
-        status: "active",
-        startDate: "2024-09",
-        totalSessions: 0,
-        hwCompletionRate: 0,
-      },
-    });
-
-    const session = await prisma.lessonSession.create({
-      data: {
-        studentId: student.id,
-        start: new Date("2025-03-20T09:00:00"),
-        end: new Date("2025-03-20T11:00:00"),
-        place: "자택",
-        notes: "테스트 메모",
-      },
-    });
-    sessionId = session.id;
-  });
-
-  it("존재하는 수업 조회", async () => {
-    const req = createGetRequest(`http://localhost/api/sessions/${sessionId}`);
-    const res = await GET(req, createContext(sessionId));
+    const req = createGetRequest("http://localhost/api/sessions/1");
+    const res = await GET(req, createContext(1));
     const { status, data } = await parseResponse<Record<string, unknown>>(res);
 
     expect(status).toBe(200);
-    expect(data.id).toBe(sessionId);
+    expect(data.id).toBe(1);
     expect(data.notes).toBe("테스트 메모");
     expect(data.homework).toEqual([]);
   });
 
-  it("없는 id 404", async () => {
+  it("returns 400 for an invalid id", async () => {
+    const req = createGetRequest("http://localhost/api/sessions/not-a-number");
+    const res = await GET(req, createContext("not-a-number"));
+
+    expect(res.status).toBe(400);
+    expect(mocks.prisma.lessonSession.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a missing session", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValue(null);
+
     const req = createGetRequest("http://localhost/api/sessions/99999");
     const res = await GET(req, createContext(99999));
     const { status, data } = await parseResponse<{ error: string }>(res);
@@ -62,132 +88,91 @@ describe("GET /api/sessions/[id]", () => {
 });
 
 describe("PATCH /api/sessions/[id]", () => {
-  let sessionId: number;
+  it("updates session notes", async () => {
+    mocks.prisma.lessonSession.findFirst
+      .mockResolvedValueOnce({
+        id: 1,
+        start: baseSession.start,
+        end: baseSession.end,
+      })
+      .mockResolvedValueOnce({ ...baseSession, notes: "수정된 메모" });
 
-  beforeEach(async () => {
-    await prisma.homeworkItem.deleteMany();
-    await prisma.lessonSession.deleteMany();
-    await prisma.student.deleteMany();
-
-    const student = await prisma.student.create({
-      data: {
-        name: "테스트",
-        subject: "수학",
-        grade: "고1",
-        school: "테스트고",
-        color: "s-blue",
-        avatarChar: "테",
-        status: "active",
-        startDate: "2024-09",
-        totalSessions: 0,
-        hwCompletionRate: 0,
-      },
+    const req = createJsonRequest("http://localhost/api/sessions/1", "PATCH", {
+      notes: "수정된 메모",
     });
 
-    const session = await prisma.lessonSession.create({
-      data: {
-        studentId: student.id,
-        start: new Date("2025-03-20T09:00:00"),
-        end: new Date("2025-03-20T11:00:00"),
-        place: "자택",
-        notes: "기존 메모",
-      },
-    });
-    sessionId = session.id;
-  });
-
-  it("수업 메모 수정", async () => {
-    const req = createJsonRequest(
-      `http://localhost/api/sessions/${sessionId}`,
-      "PATCH",
-      { notes: "수정된 메모" },
-    );
-
-    const res = await PATCH(req, createContext(sessionId));
+    const res = await PATCH(req, createContext(1));
     const { status, data } = await parseResponse<Record<string, unknown>>(res);
 
     expect(status).toBe(200);
     expect(data.notes).toBe("수정된 메모");
+    expect(mocks.txLessonSessionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({ notes: "수정된 메모" }),
+      }),
+    );
   });
 
-  it("homework 교체", async () => {
-    await prisma.homeworkItem.createMany({
-      data: [
-        { sessionId, text: "기존 숙제1", done: false },
-        { sessionId, text: "기존 숙제2", done: true },
-      ],
+  it("rejects reversed time intervals", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValueOnce({
+      id: 1,
+      start: baseSession.start,
+      end: baseSession.end,
     });
 
-    const req = createJsonRequest(
-      `http://localhost/api/sessions/${sessionId}`,
-      "PATCH",
-      {
-        homework: [
-          { text: "새 숙제1", done: false },
-          { text: "새 숙제2", done: true },
-        ],
-      },
-    );
+    const req = createJsonRequest("http://localhost/api/sessions/1", "PATCH", {
+      end: "2025-03-20T08:00:00.000Z",
+    });
 
-    const res = await PATCH(req, createContext(sessionId));
-    const { status, data } = await parseResponse<Record<string, unknown>>(res);
+    const res = await PATCH(req, createContext(1));
+    const { status, data } = await parseResponse<{ error: string }>(res);
 
-    expect(status).toBe(200);
-    const hw = data.homework as Array<{ text: string }>;
-    expect(hw).toHaveLength(2);
-    expect(hw.map((h) => h.text)).toEqual(["새 숙제1", "새 숙제2"]);
+    expect(status).toBe(400);
+    expect(data.error).toContain("종료 시각");
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported enum values", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValueOnce({
+      id: 1,
+      start: baseSession.start,
+      end: baseSession.end,
+    });
+
+    const req = createJsonRequest("http://localhost/api/sessions/1", "PATCH", {
+      focus: "sometimes",
+    });
+
+    const res = await PATCH(req, createContext(1));
+    expect(res.status).toBe(400);
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 
 describe("DELETE /api/sessions/[id]", () => {
-  let sessionId: number;
+  it("deletes a session", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValue({ id: 1 });
+    mocks.prisma.lessonSession.delete.mockResolvedValue(baseSession);
 
-  beforeEach(async () => {
-    await prisma.homeworkItem.deleteMany();
-    await prisma.lessonSession.deleteMany();
-    await prisma.student.deleteMany();
-
-    const student = await prisma.student.create({
-      data: {
-        name: "테스트",
-        subject: "수학",
-        grade: "고1",
-        school: "테스트고",
-        color: "s-blue",
-        avatarChar: "테",
-        status: "active",
-        startDate: "2024-09",
-        totalSessions: 0,
-        hwCompletionRate: 0,
-      },
-    });
-
-    const session = await prisma.lessonSession.create({
-      data: {
-        studentId: student.id,
-        start: new Date("2025-03-20T09:00:00"),
-        end: new Date("2025-03-20T11:00:00"),
-      },
-    });
-    sessionId = session.id;
-  });
-
-  it("수업 삭제 성공", async () => {
-    const req = createGetRequest(`http://localhost/api/sessions/${sessionId}`);
-    const res = await DELETE(req, createContext(sessionId));
+    const req = createGetRequest("http://localhost/api/sessions/1");
+    const res = await DELETE(req, createContext(1));
     const { status, data } = await parseResponse<Record<string, unknown>>(res);
 
     expect(status).toBe(200);
-    expect(data.id).toBe(sessionId);
-
-    const found = await prisma.lessonSession.findUnique({ where: { id: sessionId } });
-    expect(found).toBeNull();
+    expect(data.id).toBe(1);
+    expect(mocks.prisma.lessonSession.delete).toHaveBeenCalledWith({
+      where: { id: 1 },
+    });
   });
 
-  it("없는 id 삭제 시 500 (Prisma RecordNotFound)", async () => {
+  it("returns 404 for a missing session", async () => {
+    mocks.prisma.lessonSession.findFirst.mockResolvedValue(null);
+
     const req = createGetRequest("http://localhost/api/sessions/99999");
     const res = await DELETE(req, createContext(99999));
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(404);
+    expect(mocks.prisma.lessonSession.delete).not.toHaveBeenCalled();
   });
 });

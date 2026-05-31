@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTzData } from "@/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -32,20 +32,27 @@ export function RecordList({
   const primaryOffset = getPrimaryOffset(tzData);
   const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
 
-  const sorted = [...sessions].sort(
-    // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
-    (a, b) => b.start.getTime() - a.start.getTime(),
+  const studentsById = useMemo(
+    () => new Map(students.map((student) => [student.id, student])),
+    [students],
   );
-  const filtered = sorted.filter((s) => {
-    if (!search.trim()) return true;
-    const st = students.find((x) => x.id === s.studentId);
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (
-      st?.name.toLowerCase().includes(q) ||
-      st?.subject.toLowerCase().includes(q) ||
-      st?.grade.toLowerCase().includes(q)
-    );
-  });
+    return [...sessions]
+      .sort(
+        // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
+        (a, b) => b.start.getTime() - a.start.getTime(),
+      )
+      .filter((s) => {
+        if (!q) return true;
+        const st = s.studentId == null ? undefined : studentsById.get(s.studentId);
+        return (
+          st?.name.toLowerCase().includes(q) ||
+          st?.subject.toLowerCase().includes(q) ||
+          st?.grade.toLowerCase().includes(q)
+        );
+      });
+  }, [search, sessions, studentsById]);
 
   useEffect(() => {
     setSearch(initialSearch);
@@ -103,7 +110,7 @@ export function RecordList({
       </div>
 
       {filtered.map((s) => {
-        const st = students.find((x) => x.id === s.studentId);
+        const st = s.studentId == null ? undefined : studentsById.get(s.studentId);
         const isActive = s.id === activeId;
         const hasNotes = s.notes.trim().length > 0;
         const sessionStatus = sessionStatusInPrimaryTimezone(

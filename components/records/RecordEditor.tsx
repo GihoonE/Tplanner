@@ -7,7 +7,6 @@ import {
   formatSessionDurationHours,
   getPrimaryOffset,
 } from "@/lib/utils";
-import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { resolveAvatarBg, resolveColorText } from "@/lib/studentColor";
 import { SessionTimePicker } from "@/components/records/SessionTimePicker";

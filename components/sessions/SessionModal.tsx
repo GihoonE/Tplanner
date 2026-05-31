@@ -5,7 +5,7 @@ import { fmtTz, formatFullDate, sessionStatusInPrimaryTimezone } from "@/lib/uti
 import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
 import { Button } from "@/components/ui/Button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
 import type { HomeworkItem, Session, Understanding, Focus } from "@/types";
 
 // API 응답 형식 (start/end는 ISO string)
@@ -29,6 +29,17 @@ type HomeworkFromApi = {
   sessionId: number;
   text: string;
   done: boolean;
+};
+
+type UpdateSessionField = <K extends keyof SessionWithDates>(
+  key: K,
+  value: SessionWithDates[K],
+) => void;
+
+type MoodOption<T extends string> = {
+  v: T;
+  e: string;
+  l: string;
 };
 
 // ── Understanding / Focus options ──────────────────────────────────────────────
@@ -397,14 +408,21 @@ function DetailTab({
   primaryOffset,
   onUpdate,
   readOnly,
-}: any) {
+}: {
+  session: SessionWithDates;
+  student: { name: string; grade: string; subject: string } | undefined;
+  statusText: string;
+  primaryOffset: number;
+  onUpdate: UpdateSessionField;
+  readOnly: boolean;
+}) {
   return (
     <div>
       <Row icon="🕐" bg="bg-sky-50" label="시간">
         {fmtTz(session.start, primaryOffset)} –{" "}
         {fmtTz(session.end, primaryOffset)}
         <span className="text-slate-400 ml-1.5 font-normal">
-          ({Math.round(((session.end - session.start) / 3600000) * 10) / 10}
+          ({Math.round(((session.end.getTime() - session.start.getTime()) / 3600000) * 10) / 10}
           시간)
         </span>
       </Row>
@@ -451,7 +469,16 @@ function RecordTab({
   onToggleHw,
   onRemoveHw,
   readOnly,
-}: any) {
+}: {
+  session: SessionWithDates;
+  hwInput: string;
+  setHwInput: Dispatch<SetStateAction<string>>;
+  onUpdate: UpdateSessionField;
+  onAddHw: () => void;
+  onToggleHw: (id: number) => void;
+  onRemoveHw: (id: number) => void;
+  readOnly: boolean;
+}) {
   return (
     <div className="flex flex-col gap-5">
       {/* Notes */}
@@ -591,15 +618,15 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function MoodRow({
+function MoodRow<T extends string>({
   opts,
   value,
   onChange,
   disabled = false,
 }: {
-  opts: any[];
-  value: string;
-  onChange: (v: any) => void;
+  opts: MoodOption<T>[];
+  value: T;
+  onChange: (v: T) => void;
   disabled?: boolean;
 }) {
   return (
