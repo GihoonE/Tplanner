@@ -14,6 +14,7 @@ import type {
   TzEntry,
   CalendarView,
   SessionModalTab,
+  SessionEditorAnchor,
 } from "@/types";
 import { TZ_CATALOG } from "@/lib/constants";
 
@@ -49,6 +50,7 @@ interface TutorStore {
   modalSessionId: number | null;
   modalTab: SessionModalTab;
   modalOpen: boolean;
+  modalAnchor: SessionEditorAnchor | null;
 
   // ── Record page ───────────────────────────────────────────────────────────
   activeRecordId: number | null;
@@ -70,7 +72,11 @@ interface TutorStore {
   setNow: (d: Date) => void;
 
   // ── Actions — modal ───────────────────────────────────────────────────────
-  openModal: (sessionId: number, tab?: SessionModalTab) => void;
+  openModal: (
+    sessionId: number,
+    tab?: SessionModalTab,
+    anchor?: SessionEditorAnchor | null,
+  ) => void;
   closeModal: () => void;
   setModalTab: (tab: SessionModalTab) => void;
 
@@ -146,6 +152,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   modalSessionId: null,
   modalTab: "detail",
   modalOpen: false,
+  modalAnchor: null,
   activeRecordId: null,
 
   // ── Data actions ───────────────────────────────────────────────────────────
@@ -158,6 +165,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== id),
       modalOpen: state.modalSessionId === id ? false : state.modalOpen,
+      modalAnchor: state.modalSessionId === id ? null : state.modalAnchor,
     })),
 
   addSession: (s) => set((state) => ({ sessions: [...state.sessions, s] })),
@@ -241,10 +249,16 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   setNow: (d) => set({ now: new Date(d) }),
 
   // ── Modal actions ──────────────────────────────────────────────────────────
-  openModal: (sessionId, tab = "detail") =>
-    set({ modalSessionId: sessionId, modalTab: tab, modalOpen: true }),
+  openModal: (sessionId, tab = "detail", anchor = null) =>
+    set({
+      modalSessionId: sessionId,
+      modalTab: tab,
+      modalOpen: true,
+      modalAnchor: anchor,
+    }),
 
-  closeModal: () => set({ modalOpen: false, modalSessionId: null }),
+  closeModal: () =>
+    set({ modalOpen: false, modalSessionId: null, modalAnchor: null }),
 
   setModalTab: (tab) => set({ modalTab: tab }),
 

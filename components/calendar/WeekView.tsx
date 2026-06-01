@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
 import { SessionBlock } from "./SessionBlock";
+import {
+  SessionDragPreview,
+  type SessionDragPreviewState,
+} from "./SessionDragPreview";
+import { sessionEditorAnchorFromElement } from "./sessionEditorAnchor";
+import {
+  rescheduleSession,
+  SESSION_DRAG_THRESHOLD_PX,
+} from "./sessionReschedule";
 import {
   addDays, sameDay, sessionsForDay,
   snapTo15, primaryMinToKst, extraHourLabel, wallClockDateInTimeZone,
@@ -22,15 +32,19 @@ function weekKey(d: Date): string {
 
 export function WeekView({
   onCreateRange,
+  canRescheduleSessions = false,
 }: {
   onCreateRange?: (range: { start: Date; end: Date }) => void;
+  canRescheduleSessions?: boolean;
 }) {
+  const queryClient = useQueryClient();
   const sessions       = useSessions();
   const tzData         = useTzData();
   const now            = useNow();
   const students       = useTutorStore((s) => s.students);
   const curWeekStart   = useTutorStore((s) => s.curWeekStart);
   const openModal      = useTutorStore((s) => s.openModal);
+  const upsertSession  = useTutorStore((s) => s.upsertSession);
   const [hourHeightPx, setHourHeightPx] = useState(HOUR_HEIGHT_PX);
   const [dayWidthPx, setDayWidthPx] = useState(MIN_DAY_WIDTH_PX);
   const [anchorWeekStart, setAnchorWeekStart] = useState(() => new Date(curWeekStart));
@@ -79,6 +93,10 @@ export function WeekView({
   const scrollUpdateRef = useRef(false);
   const skipScrollToRef = useRef(false);
   const syncingScrollRef = useRef(false);
+  const suppressSessionClickRef = useRef(false);
+  const [dragPreview, setDragPreview] =
+    useState<SessionDragPreviewState | null>(null);
+  const [draggingSessionId, setDraggingSessionId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!bodyRef.current) return;
@@ -198,6 +216,127 @@ export function WeekView({
       setHoverGuide({ top, di });
     },
     [gridHeightPx, dayWidthPx, days.length],
+  );
+
+  const handleSessionMouseDown = useCallback(
+    (
+      e: React.MouseEvent,
+      session: (typeof sessions)[number],
+      student: ReturnType<typeof studentsById.get>,
+    ) => {
+      if (!canRescheduleSessions || e.button !== 0) {
+        e.stopPropagation();
+        return;
+      }
+      if (!colsRef.current || !ghostRef.current) return;
+
+      const rect = (e.currentTarget as Element).getBoundingClientRect();
+      const originX = e.clientX;
+      const originY = e.clientY;
+      const durationMs = session.end.getTime() - session.start.getTime();
+      let dragging = false;
+      let drop: { date: Date; startMin: number } | null = null;
+      e.stopPropagation();
+
+      function updateDrop(moveEvent: MouseEvent) {
+        if (!colsRef.current || !ghostRef.current) return;
+        const colsRect = colsRef.current.getBoundingClientRect();
+        const x = moveEvent.clientX - colsRect.left;
+        const di = Math.max(
+          0,
+          Math.min(days.length - 1, Math.floor(x / dayWidthPx)),
+        );
+        const colEl = colsRef.current.children[di] as HTMLElement | undefined;
+        if (!colEl) return;
+        const colRect = colEl.getBoundingClientRect();
+        const relY = moveEvent.clientY - colRect.top;
+        const startMin = Math.max(
+          0,
+          Math.min(
+            DAY_MINUTES - 15,
+            snapTo15(Math.floor(relY / (hourHeightPx / 60))),
+          ),
+        );
+        drop = { date: days[di], startMin };
+
+        const ghost = ghostRef.current;
+        ghost.style.display = "block";
+        ghost.style.left = `${colsRef.current.offsetLeft + colRect.left - colsRect.left + 3}px`;
+        ghost.style.width = `${colRect.width - 6}px`;
+        ghost.style.top = `${startMin * (hourHeightPx / 60)}px`;
+        ghost.style.height = `${Math.max(
+          20,
+          (durationMs / 60000) * (hourHeightPx / 60),
+        )}px`;
+      }
+
+      function onMove(moveEvent: MouseEvent) {
+        const dx = moveEvent.clientX - originX;
+        const dy = moveEvent.clientY - originY;
+        if (
+          !dragging &&
+          Math.hypot(dx, dy) < SESSION_DRAG_THRESHOLD_PX
+        ) {
+          return;
+        }
+        dragging = true;
+        suppressSessionClickRef.current = true;
+        setDraggingSessionId(session.id);
+        setDragPreview({
+          session,
+          student,
+          x: moveEvent.clientX,
+          y: moveEvent.clientY,
+          width: rect.width,
+          height: rect.height,
+          grabX: originX - rect.left,
+          grabY: originY - rect.top,
+          variant: "block",
+        });
+        moveEvent.preventDefault();
+        updateDrop(moveEvent);
+      }
+
+      async function onUp(upEvent: MouseEvent) {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        if (ghostRef.current) ghostRef.current.style.display = "none";
+        setDragPreview(null);
+        setDraggingSessionId(null);
+        if (!dragging) return;
+        updateDrop(upEvent);
+        if (!drop) return;
+
+        const { h, m } = primaryMinToKst(drop.startMin, primaryOffset);
+        const start = new Date(drop.date);
+        start.setHours(h, m, 0, 0);
+        const end = new Date(start.getTime() + durationMs);
+
+        try {
+          await rescheduleSession(
+            session,
+            start,
+            end,
+            queryClient,
+            upsertSession,
+          );
+        } catch (error) {
+          console.error("[WeekView] session reschedule failed", error);
+        }
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [
+      canRescheduleSessions,
+      dayWidthPx,
+      days,
+      hourHeightPx,
+      primaryOffset,
+      queryClient,
+      upsertSession,
+    ],
   );
 
   function syncHeaderScroll(left: number) {
@@ -373,8 +512,20 @@ export function WeekView({
                         hourHeightPx={hourHeightPx}
                         isPast={past}
                         isNow={ongoing}
-                        onClick={(e) => { e.stopPropagation(); openModal(s.id); }}
-                        onMouseDown={(e) => { e.stopPropagation(); /* drag handled by parent */ }}
+                        isDragging={draggingSessionId === s.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (suppressSessionClickRef.current) {
+                            suppressSessionClickRef.current = false;
+                            return;
+                          }
+                          openModal(
+                            s.id,
+                            "detail",
+                            sessionEditorAnchorFromElement(e.currentTarget),
+                          );
+                        }}
+                        onMouseDown={(e) => handleSessionMouseDown(e, s, student)}
                         onResizeMouseDown={(e) => { e.stopPropagation(); }}
                       />
                     );
@@ -401,6 +552,10 @@ export function WeekView({
 
           {/* Drag ghost */}
           <div ref={ghostRef} className="drag-ghost" style={{ position: "absolute" }} />
+          <SessionDragPreview
+            preview={dragPreview}
+            primaryOffset={primaryOffset}
+          />
         </div>
       </div>
     </div>

@@ -109,12 +109,16 @@ export default function CalendarPage() {
         {view === "week"  && (
           <WeekView
             onCreateRange={canCreateSessions ? setCreateRange : undefined}
+            canRescheduleSessions={canCreateSessions}
           />
         )}
-        {view === "month" && <MonthView />}
+        {view === "month" && (
+          <MonthView canRescheduleSessions={canCreateSessions} />
+        )}
         {view === "day"   && (
           <DayView
             onCreateRange={canCreateSessions ? setCreateRange : undefined}
+            canRescheduleSessions={canCreateSessions}
           />
         )}
       </div>

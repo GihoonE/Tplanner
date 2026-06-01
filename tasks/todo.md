@@ -1138,3 +1138,115 @@
 - Wrapped `RecordsWorkspace` with `Suspense` in `app/records/page.tsx`.
 - Added `dynamic = "force-dynamic"` to `app/api/parent/students/route.ts` and `app/api/calendar/sessions/route.ts` to avoid static rendering attempts for auth-backed API routes.
 - Re-ran `npm run build`; it now passes.
+
+## Calendar Session Editor Popover
+
+- [x] Trace calendar session click flow and current session modal state.
+- [x] Store the clicked session element bounds when opening a session.
+- [x] Render the session editor beside the clicked session, choosing the side with more space.
+- [x] Preserve mobile/small-screen fallback behavior.
+- [x] Verify TypeScript/build status and document the result.
+
+## Review
+
+- Added `SessionEditorAnchor` state to the shared store so calendar session clicks can carry the clicked element bounds.
+- Updated day, week, and month calendar session clicks to open the session editor anchored to the clicked block/chip.
+- Changed `SessionModal` to render as a side popover when an anchor exists, picking the side with more available space and falling back to a bottom sheet on small screens.
+- Kept the existing centered modal/backdrop behavior for any future unanchored `openModal` calls.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Draggable Calendar Session Editor
+
+- [x] Add a local drag offset for the anchored session editor.
+- [x] Make the editor header draggable without blocking buttons/tabs/body editing.
+- [x] Reset drag offset whenever a session editor is opened from a fresh anchor.
+- [x] Clamp dragged position inside the viewport.
+- [x] Verify TypeScript/build status and document the result.
+
+## Review
+
+- Added local-only drag offset state to `SessionModal`, so the user can move the open editor without persisting the last position.
+- Made the session editor header the drag handle and kept the close button from starting a drag.
+- Reset the drag offset whenever a new session/anchor opens, so reopening starts from the fixed calendar-derived position.
+- Clamped dragged editor coordinates inside the viewport.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Drag To Reschedule Sessions
+
+- [x] Confirm session update API supports `start`/`end` changes.
+- [x] Add shared reschedule helper that patches the session and refreshes calendar/session caches.
+- [x] Add monthly session drag/drop that changes only the date and preserves the displayed time.
+- [x] Add weekly and daily session drag/drop that preserves duration and changes the start time by drop position.
+- [x] Prevent normal click/editor opening after an actual drag.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Confirmed `PATCH /api/sessions/[id]` already accepts validated `start`/`end` updates.
+- Added `components/calendar/sessionReschedule.ts` for the shared PATCH/cache-refresh path.
+- Monthly view now lets instructors drag a session chip onto another date, preserving the original start time and duration.
+- Weekly and daily views now let instructors drag session blocks onto a new time slot, preserving duration and recalculating `end`.
+- Drag gestures over the threshold suppress the normal click-to-open editor behavior.
+- Parent/read-only users do not get reschedule drag behavior.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Interactive Session Drag Preview
+
+- [x] Keep the existing dotted drop-position tracking UI.
+- [x] Add a floating session preview that follows the cursor during reschedule drag.
+- [x] Dim the original in-place session while dragging so it no longer looks static.
+- [x] Apply the preview to monthly chips and weekly/daily blocks.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Added `SessionDragPreview` to render a fixed-position copy of the dragged session under the cursor.
+- Kept the existing dotted ghost as the snapped drop-position indicator.
+- Weekly and daily session blocks now dim in their original slot while the floating block follows the cursor.
+- Monthly session chips now dim in their original date while the floating chip follows the cursor.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Drag Drop Alignment Fix
+
+- [x] Replace UTC-derived month cell keys with local date keys.
+- [x] Add monthly dotted drop-position preview.
+- [x] Use the same local date key for preview and final drop update.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Replaced monthly `toISOString().slice(0, 10)` date keys with local `YYYY-MM-DD` keys to avoid timezone-driven one-day drift.
+- Added a dashed monthly drop preview inside the hovered date cell during session drag.
+- Reused that same local date key for the final drop calculation, so visual preview and saved date now match.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Multi Select Copy Paste
+
+- [x] Add monthly session selection state with shift-click multi-select on the same date.
+- [x] Show selected session UI affordance and a copy toolbar.
+- [x] Copy selected sessions into a paste buffer.
+- [x] Paste copied sessions onto another date preserving time, place, student, notes, focus, understanding, and homework.
+- [x] Refresh local store and React Query caches after paste.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Monthly session click now selects the clicked session while still opening the session editor.
+- Shift-click toggles additional selected sessions when they are on the same date; shift-clicking a different date starts a new selection.
+- Selected sessions get a visible ring/brightness treatment.
+- A monthly toolbar appears for selection/copy/paste status, with a copy button once 2+ sessions are selected.
+- Pasting onto a date creates new sessions with copied student, time, duration, place, notes, understanding, focus, and homework.
+- Store and React Query session/calendar caches are refreshed after paste.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.

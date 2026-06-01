@@ -5,8 +5,24 @@ import { fmtTz, formatFullDate, sessionStatusInPrimaryTimezone } from "@/lib/uti
 import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
 import { Button } from "@/components/ui/Button";
-import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
-import type { HomeworkItem, Session, Understanding, Focus } from "@/types";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type CSSProperties,
+  type Dispatch,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import type {
+  Focus,
+  HomeworkItem,
+  Session,
+  SessionEditorAnchor,
+  Understanding,
+} from "@/types";
 
 // API 응답 형식 (start/end는 ISO string)
 type SessionFromApi = {
@@ -42,6 +58,16 @@ type MoodOption<T extends string> = {
   l: string;
 };
 
+type DragOffset = {
+  x: number;
+  y: number;
+};
+
+const EDITOR_WIDTH = 520;
+const EDITOR_MARGIN = 16;
+const DESKTOP_MIN_WIDTH = 760;
+const ESTIMATED_EDITOR_HEIGHT = 620;
+
 // ── Understanding / Focus options ──────────────────────────────────────────────
 const U_OPTS: { v: Understanding; e: string; l: string }[] = [
   { v: "good", e: "😊", l: "잘 이해" },
@@ -64,15 +90,137 @@ function toSessionWithDates(data: SessionFromApi): SessionWithDates {
   };
 }
 
+function clamp(value: number, min: number, max: number) {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function getEditorPosition(anchor: SessionEditorAnchor | null): CSSProperties | null {
+  if (!anchor || typeof window === "undefined") return null;
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  if (viewportWidth < DESKTOP_MIN_WIDTH) {
+    return {
+      position: "fixed",
+      left: 12,
+      right: 12,
+      bottom: 12,
+      width: "auto",
+      maxHeight: "calc(100vh - 24px)",
+    };
+  }
+
+  const rightSpace = viewportWidth - (anchor.left + anchor.width);
+  const leftSpace = anchor.left;
+  const placeRight =
+    rightSpace >= EDITOR_WIDTH + EDITOR_MARGIN || rightSpace >= leftSpace;
+  const left = placeRight
+    ? clamp(
+        anchor.left + anchor.width + EDITOR_MARGIN,
+        EDITOR_MARGIN,
+        viewportWidth - EDITOR_WIDTH - EDITOR_MARGIN,
+      )
+    : clamp(
+        anchor.left - EDITOR_WIDTH - EDITOR_MARGIN,
+        EDITOR_MARGIN,
+        viewportWidth - EDITOR_WIDTH - EDITOR_MARGIN,
+      );
+  const maxTop = Math.max(
+    EDITOR_MARGIN,
+    viewportHeight -
+      Math.min(ESTIMATED_EDITOR_HEIGHT, viewportHeight - EDITOR_MARGIN * 2) -
+      EDITOR_MARGIN,
+  );
+  const top = clamp(
+    anchor.top + anchor.height / 2 - ESTIMATED_EDITOR_HEIGHT / 2,
+    EDITOR_MARGIN,
+    maxTop,
+  );
+
+  return {
+    position: "fixed",
+    top,
+    left,
+    width: EDITOR_WIDTH,
+    maxHeight: `calc(100vh - ${EDITOR_MARGIN * 2}px)`,
+  };
+}
+
+function getDraggedEditorPosition(
+  baseStyle: CSSProperties | null,
+  dragOffset: DragOffset,
+): CSSProperties | null {
+  if (
+    !baseStyle ||
+    typeof window === "undefined" ||
+    typeof baseStyle.left !== "number" ||
+    typeof baseStyle.top !== "number"
+  ) {
+    return baseStyle;
+  }
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const width =
+    typeof baseStyle.width === "number" ? baseStyle.width : EDITOR_WIDTH;
+  const height = Math.min(
+    ESTIMATED_EDITOR_HEIGHT,
+    viewportHeight - EDITOR_MARGIN * 2,
+  );
+
+  return {
+    ...baseStyle,
+    left: clamp(
+      baseStyle.left + dragOffset.x,
+      EDITOR_MARGIN,
+      viewportWidth - width - EDITOR_MARGIN,
+    ),
+    top: clamp(
+      baseStyle.top + dragOffset.y,
+      EDITOR_MARGIN,
+      viewportHeight - height - EDITOR_MARGIN,
+    ),
+  };
+}
+
+function renderEditorSurface(
+  children: ReactNode,
+  editorStyle: CSSProperties | null,
+  onClose: () => void,
+) {
+  if (editorStyle) return children;
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
   const [session, setSession] = useState<SessionWithDates | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hwInput, setHwInput] = useState("");
+  const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const dragStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    pointerId: number;
+    offset: DragOffset;
+  } | null>(null);
 
   const modalOpen = useTutorStore((s) => s.modalOpen);
   const modalSessionId = useTutorStore((s) => s.modalSessionId);
   const modalTab = useTutorStore((s) => s.modalTab);
+  const modalAnchor = useTutorStore((s) => s.modalAnchor);
   const closeModal = useTutorStore((s) => s.closeModal);
   const setModalTab = useTutorStore((s) => s.setModalTab);
   const upsertSession = useTutorStore((s) => s.upsertSession);
@@ -100,21 +248,77 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
       .finally(() => setLoading(false));
   }, [modalOpen, modalSessionId]);
 
+  useEffect(() => {
+    setDragOffset({ x: 0, y: 0 });
+  }, [
+    modalAnchor?.height,
+    modalAnchor?.left,
+    modalAnchor?.top,
+    modalAnchor?.width,
+    modalSessionId,
+  ]);
+
   const student = students.find((s) => s.id === session?.studentId);
+  const editorStyle = getDraggedEditorPosition(
+    getEditorPosition(modalAnchor),
+    dragOffset,
+  );
+  const editorFrameClass =
+    "z-[210] bg-white rounded-2xl shadow-xl w-[520px] max-h-[92vh] flex flex-col animate-scale-in overflow-hidden";
+  const editorCanDrag =
+    editorStyle !== null &&
+    typeof editorStyle.left === "number" &&
+    typeof editorStyle.top === "number";
+  const handleDragPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!editorCanDrag || (e.pointerType === "mouse" && e.button !== 0)) {
+        return;
+      }
+      dragStartRef.current = {
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+        pointerId: e.pointerId,
+        offset: dragOffset,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    },
+    [dragOffset, editorCanDrag],
+  );
+  const handleDragPointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const dragStart = dragStartRef.current;
+      if (!dragStart || dragStart.pointerId !== e.pointerId) return;
+      setDragOffset({
+        x: dragStart.offset.x + e.clientX - dragStart.pointerX,
+        y: dragStart.offset.y + e.clientY - dragStart.pointerY,
+      });
+    },
+    [],
+  );
+  const handleDragPointerEnd = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const dragStart = dragStartRef.current;
+      if (!dragStart || dragStart.pointerId !== e.pointerId) return;
+      dragStartRef.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [],
+  );
 
   if (!modalOpen) return null;
   if (loading) {
-    return (
+    return renderEditorSurface(
       <div
-        className="modal-backdrop"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) closeModal();
-        }}
+        className="z-[210] bg-white rounded-2xl shadow-xl w-[520px] animate-scale-in p-12 text-center text-slate-400"
+        style={editorStyle ?? undefined}
       >
-        <div className="bg-white rounded-2xl shadow-xl w-[520px] p-12 text-center text-slate-400">
-          로딩 중...
-        </div>
-      </div>
+        로딩 중...
+      </div>,
+      editorStyle,
+      closeModal,
     );
   }
   if (error || !session) return null;
@@ -255,14 +459,8 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
 
   const color = student?.color ?? "s-blue";
 
-  return (
-    <div
-      className="modal-backdrop"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeModal();
-      }}
-    >
-      <div className="bg-white rounded-2xl shadow-xl w-[520px] max-h-[92vh] flex flex-col animate-scale-in overflow-hidden">
+  return renderEditorSurface(
+    <div className={editorFrameClass} style={editorStyle ?? undefined}>
         {/* Accent bar */}
         <div
           className="h-1 w-full flex-shrink-0"
@@ -272,7 +470,13 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
         />
 
         {/* Header */}
-        <div className="flex items-start gap-3 px-6 pt-5">
+        <div
+          className={`flex items-start gap-3 px-6 pt-5 ${editorCanDrag ? "cursor-move select-none touch-none" : ""}`}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerEnd}
+          onPointerCancel={handleDragPointerEnd}
+        >
           <div
             className="w-11 h-11 rounded-full flex items-center justify-center text-[17px] font-bold text-white flex-shrink-0"
             style={{
@@ -300,6 +504,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
           </div>
           <button
             onClick={closeModal}
+            onPointerDown={(e) => e.stopPropagation()}
             className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors text-sm"
           >
             ✕
@@ -395,8 +600,9 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
             </Button>
           )}
         </div>
-      </div>
-    </div>
+    </div>,
+    editorStyle,
+    closeModal,
   );
 }
 

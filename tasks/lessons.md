@@ -8,3 +8,6 @@
 - `public/` 아래 이미지를 인증 전 화면에서 쓰면 middleware matcher가 해당 public asset 경로를 보호 라우트로 리다이렉트하지 않는지 반드시 확인한다.
 - OAuth scope나 consent 항목을 나중에 추가하면 기존 DB row와 기존 access token은 자동으로 보강되지 않는다. 새 scope 요청과 재로그인, 기존 유저 profile 동기화 callback까지 같이 확인한다.
 - Auth.js provider의 `authorization`을 object로 override할 때는 `params`만 넣지 말고 provider의 authorize `url`도 함께 명시한다. 기본 string 설정이 통째로 대체되어 `Invalid URL`이 날 수 있다.
+- 위치 기반 팝오버/에디터를 만들 때는 초기 anchor 배치와 사용자의 이후 수동 위치 조정을 별도 상태로 설계한다. 사용자가 드래그 가능성을 기대할 수 있는 창은 열린 동안만 local drag offset을 유지하고, 닫았다가 다시 열면 anchor에서 재계산되게 한다.
+- 드래그 앤 드롭 UI에서 drop target ghost만 움직이면 사용자가 원본 카드가 정지해 있다고 느낀다. 예측 위치 ghost는 유지하되, 실제 드래그 대상의 시각적 preview도 커서를 따라가게 만들어야 상호작용이 자연스럽다.
+- 월간/일간 캘린더의 날짜 key를 만들 때 `toISOString().slice(0, 10)`를 쓰면 로컬 자정이 UTC 전날로 밀려 드롭 위치가 한 칸 어긋날 수 있다. 사용자-facing calendar cell key는 local year/month/day로 만든다.

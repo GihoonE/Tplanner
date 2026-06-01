@@ -22,6 +22,13 @@ export type SessionStatus = "upcoming" | "ongoing" | "completed";
 export type ReportStatus = "draft" | "sent";
 export type StudentStatus = "active" | "inactive";
 
+export interface SessionEditorAnchor {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 // ── Student ──────────────────────────────
 export interface Student {
   id: number;
