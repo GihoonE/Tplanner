@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import { fmtTz } from "@/lib/utils";
 import { resolveAvatarBg } from "@/lib/studentColor";
 import type { Session, Student } from "@/types";
@@ -19,9 +20,11 @@ export type SessionDragPreviewState = {
 export function SessionDragPreview({
   preview,
   primaryOffset,
+  previewRef,
 }: {
   preview: SessionDragPreviewState | null;
   primaryOffset: number;
+  previewRef?: Ref<HTMLDivElement>;
 }) {
   if (!preview) return null;
 
@@ -35,11 +38,13 @@ export function SessionDragPreview({
   if (preview.variant === "chip") {
     return (
       <div
+        ref={previewRef}
         className="pointer-events-none fixed z-[260] truncate rounded px-1.5 py-0.5 text-[10px] font-bold shadow-xl"
         style={{
           ...surface,
-          left: preview.x - preview.grabX,
-          top: preview.y - preview.grabY,
+          left: 0,
+          top: 0,
+          transform: `translate3d(${preview.x - preview.grabX}px, ${preview.y - preview.grabY}px, 0)`,
           width: preview.width,
           height: preview.height,
         }}
@@ -51,11 +56,13 @@ export function SessionDragPreview({
 
   return (
     <div
+      ref={previewRef}
       className="pointer-events-none fixed z-[260] overflow-hidden rounded-lg px-2 py-1 shadow-2xl ring-2 ring-white/75"
       style={{
         ...surface,
-        left: preview.x - preview.grabX,
-        top: preview.y - preview.grabY,
+        left: 0,
+        top: 0,
+        transform: `translate3d(${preview.x - preview.grabX}px, ${preview.y - preview.grabY}px, 0)`,
         width: preview.width,
         height: preview.height,
       }}

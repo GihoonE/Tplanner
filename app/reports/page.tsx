@@ -7,6 +7,12 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import {
+  currentMonthValue,
+  MonthPicker,
+  monthEnd,
+  monthStart,
+} from "@/components/ui/MonthPicker";
 import { fmtTz, formatMonthDay, getPrimaryOffset } from "@/lib/utils";
 import { useTzData } from "@/store";
 import {
@@ -83,20 +89,6 @@ function isSameMonth(date: Date, now: Date) {
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth()
   );
-}
-
-function monthValue(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthStart(value: string) {
-  const [year, month] = value.split("-").map(Number);
-  return new Date(year, month - 1, 1, 0, 0, 0, 0);
-}
-
-function monthEnd(value: string) {
-  const [year, month] = value.split("-").map(Number);
-  return new Date(year, month, 0, 23, 59, 59, 999);
 }
 
 function titleFromStudentAndMonth(student: Student, date: Date) {
@@ -202,8 +194,8 @@ export default function ReportsPage() {
   const [reportTitle, setReportTitle] = useState("");
   const [reportStatus, setReportStatus] = useState<"draft" | "sent">("draft");
   const now = useMemo(() => new Date(), []);
-  const [fromMonth, setFromMonth] = useState(() => monthValue(new Date()));
-  const [toMonth, setToMonth] = useState(() => monthValue(new Date()));
+  const [fromMonth, setFromMonth] = useState(currentMonthValue);
+  const [toMonth, setToMonth] = useState(currentMonthValue);
 
   useEffect(() => {
     if (!studentsQuery.data) return;
@@ -714,32 +706,30 @@ export default function ReportsPage() {
                       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
                         From
                       </span>
-                      <input
-                        type="month"
+                      <MonthPicker
                         value={fromMonth}
                         max={toMonth}
-                        onChange={(e) => {
-                          const next = e.target.value;
+                        helperText=""
+                        buttonClassName="rounded-lg px-2.5 py-2 text-[12px]"
+                        onChange={(next) => {
                           setFromMonth(next);
                           if (next > toMonth) setToMonth(next);
                         }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-sky-400"
                       />
                     </label>
                     <label className="block">
                       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
                         To
                       </span>
-                      <input
-                        type="month"
+                      <MonthPicker
                         value={toMonth}
                         min={fromMonth}
-                        onChange={(e) => {
-                          const next = e.target.value;
+                        helperText=""
+                        buttonClassName="rounded-lg px-2.5 py-2 text-[12px]"
+                        onChange={(next) => {
                           setToMonth(next);
                           if (next < fromMonth) setFromMonth(next);
                         }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none focus:border-sky-400"
                       />
                     </label>
                     <div className="col-span-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-400">

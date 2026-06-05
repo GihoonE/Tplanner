@@ -7,11 +7,12 @@ export type ApiSessionRow = {
   studentId: number | null;
   start: string;
   end: string;
-  place: string;
-  notes: string;
-  understanding: string;
-  focus: string;
-  homework: { id: number; text: string; done: boolean }[];
+  place?: string;
+  notes?: string;
+  understanding?: string;
+  focus?: string;
+  homework?: { id: number; text: string; done: boolean }[];
+  version?: number;
   student?: Student | null;
 };
 
@@ -42,11 +43,12 @@ export function apiSessionToSession(row: ApiSessionRow): Session {
     studentId: row.studentId,
     start: new Date(row.start),
     end: new Date(row.end),
-    place: row.place,
-    notes: row.notes,
-    understanding: row.understanding as Understanding,
-    focus: row.focus as Focus,
-    homework: row.homework,
+    place: row.place ?? "",
+    notes: row.notes ?? "",
+    understanding: (row.understanding ?? "") as Understanding,
+    focus: (row.focus ?? "") as Focus,
+    homework: row.homework ?? [],
+    version: row.version ?? 1,
   };
 }
 

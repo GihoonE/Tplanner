@@ -211,6 +211,7 @@ export function RecordEditor({
         notes: string;
         understanding: string;
         focus: string;
+        version?: number;
         homework: { id: number; text: string; done: boolean }[];
       };
       onSessionChange({
@@ -223,6 +224,7 @@ export function RecordEditor({
         understanding: row.understanding as Understanding,
         focus: row.focus as Focus,
         homework: row.homework,
+        version: row.version ?? 1,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

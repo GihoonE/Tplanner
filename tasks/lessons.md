@@ -11,3 +11,13 @@
 - 위치 기반 팝오버/에디터를 만들 때는 초기 anchor 배치와 사용자의 이후 수동 위치 조정을 별도 상태로 설계한다. 사용자가 드래그 가능성을 기대할 수 있는 창은 열린 동안만 local drag offset을 유지하고, 닫았다가 다시 열면 anchor에서 재계산되게 한다.
 - 드래그 앤 드롭 UI에서 drop target ghost만 움직이면 사용자가 원본 카드가 정지해 있다고 느낀다. 예측 위치 ghost는 유지하되, 실제 드래그 대상의 시각적 preview도 커서를 따라가게 만들어야 상호작용이 자연스럽다.
 - 월간/일간 캘린더의 날짜 key를 만들 때 `toISOString().slice(0, 10)`를 쓰면 로컬 자정이 UTC 전날로 밀려 드롭 위치가 한 칸 어긋날 수 있다. 사용자-facing calendar cell key는 local year/month/day로 만든다.
+- 캘린더에서 복사/붙여넣기 같은 반복 작업은 버튼보다 OS 기본 단축키(Cmd/Ctrl+C,V)를 먼저 고려한다. 단축키 처리 시 input/textarea/contenteditable에서는 브라우저 기본 동작을 방해하지 않는다.
+- 복사 버퍼는 붙여넣기 성공 후 자동으로 비우지 말고 명시적 취소(Esc 등)로만 해제해야 반복 붙여넣기 워크플로우가 자연스럽다. 상태 안내는 캘린더 레이아웃 높이를 줄이지 않는 위치에 둔다.
+- 공유 API client에서 성공 응답도 무조건 `res.json()`하지 않는다. `content-type` 확인과 JSON parse fallback을 둬서 HTML 에러/리다이렉트 페이지가 사용자 UI에 원문 파서 에러로 노출되지 않게 한다.
+- 주간/일간처럼 시간축이 있는 캘린더에서 복사/붙여넣기와 묶음 이동은 날짜만 바꾸지 말고 가장 이른 세션을 anchor로 삼아 각 세션의 상대 offset과 duration을 보존한다. Shift 없이 다른 세션을 클릭/드래그하면 다중 선택보다 단일 작업으로 전환하는 규칙을 명확히 유지한다.
+- 월간 캘린더처럼 표시 개수가 제한된 리스트에서 drag preview는 overlay보다 실제 placeholder row로 넣어야 기존 항목이 밀리는 결과를 사용자가 볼 수 있다. 이때 표시 한도에 맞춰 밀려난 항목은 일시적으로 숨기고 `+N개` count에 반영한다.
+- Shift 기반 다중 선택 UI를 만들 때는 container `select-none`, mouse down `preventDefault`, `window.getSelection()?.removeAllRanges()`를 함께 적용해 날짜 숫자/텍스트가 브라우저 selection으로 줄줄이 잡히지 않게 한다.
+- CSS grid calendar에서 row height가 고정되어야 하면 `repeat(..., 1fr)`만 쓰지 말고 `minmax(0, 1fr)`와 cell `min-h-0`를 같이 사용한다. 그렇지 않으면 placeholder/content의 min-content height 때문에 calendar cell 자체가 커질 수 있다.
+- 월간 캘린더 한 달 화면이 정확히 viewport 한 장이어야 하면 month wrapper에 `min-h-full`만 쓰지 않는다. `min-h-full`은 content가 많을 때 더 커질 수 있으므로 `h-full min-h-0 flex-shrink-0`로 section 높이도 고정한다.
+- 일간 캘린더에서 offset-preserving group drag preview는 전체 새 세션 범위를 그대로 그리지 말고 현재 day와 교차하는 `visibleSlice`만 렌더링한다. 저장 데이터는 자정 이후 end를 유지하되 preview는 현재 화면에 보이는 부분만 보여준다.
+- Pending Buffer 설계에서 "optimistic update"와 "즉시 서버 저장"을 같은 것으로 취급하지 않는다. 사용자가 지연 저장을 원하면 캘린더 액션은 UI/cache/pending만 갱신하고, 서버 batch 저장은 명시된 flush 트리거(예: 다른 페이지 이동, 로그아웃, 이탈)에서 실행한다.

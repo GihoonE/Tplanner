@@ -45,13 +45,24 @@ model LessonSession {
   notes        String    @default("")
   understanding String   @default("") // good, normal, hard
   focus        String    @default("") // high, normal, low
+  version      Int       @default(1)
   homework     HomeworkItem[]
   reportSessions ReportSession[]
 
   @@index([studentId, start])
   @@index([start])
   @@index([end])
+  @@index([studentId, start, end])
   @@map("Session")
+}
+
+model SessionBatchCreateRequest {
+  key       String   @id
+  userId    String
+  response  Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model HomeworkItem {

@@ -78,6 +78,7 @@ export interface Session {
   understanding: Understanding;
   focus: Focus;
   homework: HomeworkItem[];
+  version: number;
 }
 
 // ── Report ───────────────────────────────

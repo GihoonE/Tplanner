@@ -56,7 +56,6 @@ export async function GET(request: NextRequest) {
           : {}),
       },
       include: {
-        homework: true,
         student: {
           select: {
             id: true,
@@ -86,11 +85,7 @@ export async function GET(request: NextRequest) {
         notes: s.notes,
         understanding: s.understanding,
         focus: s.focus,
-        homework: s.homework.map((h) => ({
-          id: h.id,
-          text: h.text,
-          done: h.done,
-        })),
+        version: s.version,
         student: s.student,
       })),
     );

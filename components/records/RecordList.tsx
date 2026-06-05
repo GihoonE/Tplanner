@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useTzData } from "@/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
+import {
+  currentMonthValue,
+  MonthPicker,
+  monthEnd,
+  monthStart,
+} from "@/components/ui/MonthPicker";
 import { fmtTz, getPrimaryOffset, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import type { Session, Student } from "@/types";
 
@@ -17,6 +23,10 @@ type RecordListProps = {
   initialSearch?: string;
 };
 
+function formatMonthDay(date: Date) {
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function RecordList({
   sessions,
   students,
@@ -27,6 +37,8 @@ export function RecordList({
   initialSearch = "",
 }: RecordListProps) {
   const [search, setSearch] = useState(initialSearch);
+  const [fromMonth, setFromMonth] = useState(currentMonthValue);
+  const [toMonth, setToMonth] = useState(currentMonthValue);
   const [now, setNow] = useState(() => new Date());
   const tzData = useTzData();
   const primaryOffset = getPrimaryOffset(tzData);
@@ -38,7 +50,10 @@ export function RecordList({
   );
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const from = monthStart(fromMonth);
+    const to = monthEnd(toMonth);
     return [...sessions]
+      .filter((session) => session.start >= from && session.start <= to)
       .sort(
         // b - a.start.getTime(): b가 앞에 옴 내림 차순, a가 앞에 오게 할려면 a - b
         (a, b) => b.start.getTime() - a.start.getTime(),
@@ -52,7 +67,7 @@ export function RecordList({
           st?.grade.toLowerCase().includes(q)
         );
       });
-  }, [search, sessions, studentsById]);
+  }, [fromMonth, search, sessions, studentsById, toMonth]);
 
   useEffect(() => {
     setSearch(initialSearch);
@@ -105,9 +120,47 @@ export function RecordList({
           className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-800 outline-none focus:border-sky-400 transition-colors"
         />
       </div>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <label className="min-w-0">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            시작
+          </span>
+          <MonthPicker
+            value={fromMonth}
+            max={toMonth}
+            helperText=""
+            buttonClassName="h-9 rounded-lg px-2 text-[12px] font-semibold"
+            onChange={(next) => {
+              setFromMonth(next);
+              if (next > toMonth) setToMonth(next);
+            }}
+          />
+        </label>
+        <label className="min-w-0">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            종료
+          </span>
+          <MonthPicker
+            value={toMonth}
+            min={fromMonth}
+            helperText=""
+            buttonClassName="h-9 rounded-lg px-2 text-[12px] font-semibold"
+            onChange={(next) => {
+              setToMonth(next);
+              if (next < fromMonth) setFromMonth(next);
+            }}
+          />
+        </label>
+      </div>
       <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-3">
         전체 수업 기록 ({filtered.length})
       </div>
+
+      {filtered.length === 0 && (
+        <p className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-[13px] font-medium text-slate-400">
+          해당 기간의 수업 기록이 없습니다.
+        </p>
+      )}
 
       {filtered.map((s) => {
         const st = s.studentId == null ? undefined : studentsById.get(s.studentId);
@@ -154,7 +207,8 @@ export function RecordList({
 
             <div className="flex flex-wrap gap-1.5">
               <span className="text-[10px] font-semibold bg-sky-50 text-sky-600 border border-sky-100 px-2 py-0.5 rounded-full">
-                {fmtTz(s.start, primaryOffset)}–{fmtTz(s.end, primaryOffset)}
+                {formatMonthDay(s.start)} {fmtTz(s.start, primaryOffset)} ~{" "}
+                {fmtTz(s.end, primaryOffset)}
               </span>
               {s.understanding === "good" && (
                 <Badge variant="green">잘이해</Badge>

@@ -13,6 +13,7 @@ import { SessionModal } from "@/components/sessions/SessionModal";
 import { NewSessionRecordModal } from "@/components/records/NewSessionRecordModal";
 import { useCalView, useTutorStore } from "@/store";
 import { addDays } from "@/lib/utils";
+import { patchSessionCaches } from "@/lib/sessionCache";
 import {
   apiSessionToSession,
   queryKeys,
@@ -36,6 +37,12 @@ export default function CalendarPage() {
   const setSessions = useTutorStore((s) => s.setSessions);
   const addSession = useTutorStore((s) => s.addSession);
   const setNow = useTutorStore((s) => s.setNow);
+  const hasPendingSessionChanges = useTutorStore(
+    (s) =>
+      Object.keys(s.pendingSessionEdits).length > 0 ||
+      s.pendingSessionDeletes.length > 0 ||
+      s.pendingSessionCreates.length > 0,
+  );
   const [createRange, setCreateRange] = useState<{
     start: Date;
     end: Date;
@@ -75,6 +82,16 @@ export default function CalendarPage() {
     const timer = window.setInterval(tick, 60_000);
     return () => window.clearInterval(timer);
   }, [setNow]);
+
+  useEffect(() => {
+    if (!hasPendingSessionChanges) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasPendingSessionChanges]);
 
   useEffect(() => {
     const studentRows = studentsQuery.data;
@@ -138,11 +155,8 @@ export default function CalendarPage() {
           initialEnd={createRange?.end ?? null}
           onCreated={(session) => {
             addSession(session);
-            queryClient.setQueryData(queryKeys.sessions, (prev) =>
-              Array.isArray(prev) ? [session, ...prev] : [session],
-            );
+            patchSessionCaches(queryClient, [session]);
             void queryClient.invalidateQueries({ queryKey: queryKeys.students });
-            void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
           }}
         />
       )}

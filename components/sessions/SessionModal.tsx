@@ -1,6 +1,9 @@
 "use client";
 
 import { useTutorStore, useNow, useTzData } from "@/store";
+import { useQueryClient } from "@tanstack/react-query";
+import { patchSessionCaches, removeSessionCaches } from "@/lib/sessionCache";
+import { flushPendingSessionChanges } from "@/components/calendar/sessionMutations";
 import { fmtTz, formatFullDate, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
@@ -34,6 +37,7 @@ type SessionFromApi = {
   notes: string;
   understanding: string;
   focus: string;
+  version?: number;
   homework: HomeworkItem[];
 };
 
@@ -87,6 +91,7 @@ function toSessionWithDates(data: SessionFromApi): SessionWithDates {
     end: new Date(data.end),
     understanding: data.understanding as Understanding,
     focus: data.focus as Focus,
+    version: data.version ?? 1,
   };
 }
 
@@ -205,6 +210,7 @@ function renderEditorSurface(
 }
 
 export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<SessionWithDates | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +230,9 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
   const closeModal = useTutorStore((s) => s.closeModal);
   const setModalTab = useTutorStore((s) => s.setModalTab);
   const upsertSession = useTutorStore((s) => s.upsertSession);
+  const markSessionPendingUpdate = useTutorStore((s) => s.markSessionPendingUpdate);
   const students = useTutorStore((s) => s.students);
+  const sessions = useTutorStore((s) => s.sessions);
   const removeFromStore = useTutorStore((s) => s.deleteSession);
   const now = useNow();
   const tzData = useTzData();
@@ -236,17 +244,39 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
       setSession(null);
       return;
     }
-    setLoading(true);
+    const cached = sessions.find((item) => item.id === modalSessionId);
+    if (cached) {
+      setSession(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
+    let cancelled = false;
     fetch(`/api/sessions/${modalSessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error("조회 실패");
         return res.json();
       })
-      .then((data) => setSession(toSessionWithDates(data as SessionFromApi)))
-      .catch((e) => setError(e instanceof Error ? e.message : "오류"))
-      .finally(() => setLoading(false));
-  }, [modalOpen, modalSessionId]);
+      .then((data) => {
+        if (cancelled) return;
+        const nextSession = toSessionWithDates(data as SessionFromApi);
+        setSession(nextSession);
+        upsertSession(nextSession);
+        patchSessionCaches(queryClient, [nextSession]);
+      })
+      .catch((e) => {
+        if (!cancelled && !cached) {
+          setError(e instanceof Error ? e.message : "오류");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, modalSessionId, queryClient, sessions, upsertSession]);
 
   useEffect(() => {
     setDragOffset({ x: 0, y: 0 });
@@ -337,7 +367,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   // K는 SessionWithDates의 키 중 하나여야함
-  async function update<K extends keyof SessionWithDates>(
+  function update<K extends keyof SessionWithDates>(
     //  각 파라미터별 변수 타입 지정
     key: K,
     value: SessionWithDates[K],
@@ -347,30 +377,20 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
     // ...session -> 세션의 데이터 모두 복사 후 파라미터로 넘어온 key만 새로운 값으로 덮어쓰기
     const updated = { ...session, [key]: value } as SessionWithDates;
     setSession(updated);
-    try {
-      // key: string, value: unknown (아무거나 다 가능)
-      const body: Record<string, unknown> = {};
-      if (
-        key === "place" ||
-        key === "notes" ||
-        key === "understanding" ||
-        key === "focus"
-      ) {
-        body[key] = value;
-      }
-      const res = await fetch(`/api/sessions/${session.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // 반환된 api call을 with dates로 변환해 UI 변경
-        const nextSession = toSessionWithDates(data as SessionFromApi);
-        setSession(nextSession);
-        upsertSession(nextSession);
-      }
-    } catch {
+    upsertSession(updated);
+    patchSessionCaches(queryClient, [updated]);
+    markSessionPendingUpdate(updated.id, { [key]: value } as Partial<Session>);
+  }
+
+  async function saveModalAndClose() {
+    if (readOnly) {
+      closeModal();
+      return;
+    }
+    const saved = await flushPendingSessionChanges(queryClient);
+    if (saved) {
+      closeModal();
+    } else {
       setError("저장 실패");
     }
   }
@@ -563,7 +583,10 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
             </>
           ) : (
             <>
-              <Button variant="primary" onClick={closeModal}>
+              <Button
+                variant="primary"
+                onClick={() => void saveModalAndClose()}
+              >
                 {readOnly ? "닫기" : "✓ 저장 완료"}
               </Button>
               <Button variant="ghost" onClick={() => setModalTab("detail")}>
@@ -589,6 +612,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
                   });
                   if (res.ok) {
                     removeFromStore(session.id);
+                    removeSessionCaches(queryClient, [session.id]);
                     closeModal();
                   } else setError("삭제 실패");
                 } catch {

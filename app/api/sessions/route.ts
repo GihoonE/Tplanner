@@ -39,6 +39,7 @@ export async function GET() {
         notes: s.notes,
         understanding: s.understanding,
         focus: s.focus,
+        version: s.version,
         homework: s.homework.map((h) => ({
           id: h.id,
           text: h.text,
@@ -177,6 +178,7 @@ export async function POST(_req: NextRequest) {
       notes: s.notes,
       understanding: s.understanding,
       focus: s.focus,
+      version: s.version,
       homework: s.homework.map((h) => ({
         id: h.id,
         text: h.text,

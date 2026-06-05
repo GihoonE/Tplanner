@@ -49,6 +49,7 @@ export async function GET(
       notes: s.notes,
       understanding: s.understanding,
       focus: s.focus,
+      version: s.version,
       homework: s.homework.map((h) => ({
         id: h.id,
         text: h.text,
@@ -147,6 +148,7 @@ export async function PATCH(
           ...(focusParam.value !== undefined && { focus: focusParam.value }),
           ...(startParam.value !== undefined && { start: startParam.value }),
           ...(endParam.value !== undefined && { end: endParam.value }),
+          version: { increment: 1 },
         },
       });
     });
@@ -170,6 +172,7 @@ export async function PATCH(
       notes: updated.notes,
       understanding: updated.understanding,
       focus: updated.focus,
+      version: updated.version,
       homework: updated.homework.map((h) => ({
         id: h.id,
         text: h.text,
@@ -225,6 +228,7 @@ export async function DELETE(
       notes: s.notes,
       understanding: s.understanding,
       focus: s.focus,
+      version: s.version,
       homework: [],
     });
   } catch (e) {

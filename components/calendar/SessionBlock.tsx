@@ -17,6 +17,7 @@ interface SessionBlockProps {
   onResizeMouseDown: (e: React.MouseEvent) => void;
   onClick: (e: React.MouseEvent) => void;
   isDragging?: boolean;
+  isSelected?: boolean;
 }
 
 const STRIPE = "repeating-linear-gradient(90deg,currentColor 0,currentColor 3px,transparent 3px,transparent 7px)";
@@ -33,6 +34,7 @@ export function SessionBlock({
   onResizeMouseDown,
   onClick,
   isDragging = false,
+  isSelected = false,
 }: SessionBlockProps) {
   const slice = useMemo(() => visibleSlice(session, colDate), [session, colDate]);
   if (!slice) return null;
@@ -56,7 +58,7 @@ export function SessionBlock({
 
   return (
     <div
-      className={`session-block absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity,filter] z-[2] hover:z-[9] hover:-translate-y-0.5 hover:brightness-105 hover:ring-2 hover:ring-white/75 ${student ? "" : "session-new"} ${isDragging ? "opacity-25" : ""}`}
+      className={`session-block absolute left-[3px] right-[3px] overflow-hidden cursor-pointer transition-[box-shadow,transform,opacity,filter] z-[2] hover:z-[9] hover:-translate-y-0.5 hover:brightness-105 hover:ring-2 hover:ring-white/75 ${student ? "" : "session-new"} ${isDragging ? "opacity-25" : ""} ${isSelected ? "ring-2 ring-sky-950 ring-offset-2 ring-offset-white brightness-110" : ""}`}
       style={{
         top:          topPx,
         height:       hPx,

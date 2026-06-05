@@ -43,6 +43,17 @@ Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
 - Zero context switching required from the user
 - Go fix failing CI tests without being told how
 
+### 7. Documentation
+
+When the user encounters a problem and asks for help solving it, document the troubleshooting process in `docs/problem_shooting.md` for the user's future study.
+
+Each entry should include:
+
+- Problem
+- Cause
+- Solution
+- Why the solution works
+
 ## Task Management
 
 1. Plan First: write plan to tasks/todo.md with checkable items

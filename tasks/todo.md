@@ -1,3 +1,140 @@
+## FIX.md Optimization Plan Review
+
+- [x] Read the user's implementation notes in `FIX.md`.
+- [x] Identify missing or risky optimization planning points.
+- [x] Append a comparison-friendly review section to the bottom of `FIX.md`.
+- [x] Verify the appended section is present.
+
+## Review
+
+- Added `추가 검토 / 보강하면 좋은 포인트` to the bottom of `FIX.md`.
+- Covered source-of-truth conflicts, broad invalidation, batch transaction semantics, optimistic temp ids, pending buffer merge rules, page-exit flush reliability, server versioning, payload splitting, DB indexes, drag render cost, dirty/save UI states, idempotency keys, and suggested implementation order.
+
+## Calendar Performance Source Audit
+
+- [x] Inspect calendar interaction write paths.
+- [x] Inspect session API and DB route sources.
+- [x] Inspect React Query invalidation and Zustand synchronization sources.
+- [x] Inspect calendar render recomputation sources.
+- [x] Document potential performance sources in `FIX.md` without prescribing fixes.
+
+## Review
+
+- Added `Calendar Interaction Performance Audit` to `FIX.md`.
+- Documented 12 potential sources of calendar slowness with code locations.
+- Covered per-session API writes, broad invalidations, large calendar fetch ranges, heavy API payloads, extra DB reads after writes, React Query to Zustand copying, whole-array store updates, view recomputation, mousemove state updates, and session modal refetch behavior.
+- No optimization implementation was performed.
+
+## Daily Multi Select Copy Paste Drag
+
+- [x] Inspect current DayView click, drag, and time coordinate behavior.
+- [x] Add daily multi-select state, selected styling, and shortcut status panel.
+- [x] Add Cmd/Ctrl+C, Cmd/Ctrl+V, Cmd/Ctrl+Backspace, and Esc behavior.
+- [x] Implement paste and group drag with earliest-session anchor offsets.
+- [x] Render dashed drop previews only for the current day visible slice.
+- [x] Verify typecheck, lint, build, and document results.
+
+## Review
+
+- Daily view now supports Shift-click multi-select, selected styling, and the shared lower-left shortcut status panel.
+- Cmd/Ctrl+C copies selected daily sessions, Cmd/Ctrl+V pastes them at the hovered 15-minute snapped time, Esc clears state, and Cmd/Ctrl+Backspace deletes selected sessions.
+- Daily paste and group drag preserve each selected session's offset and duration from the earliest selected session.
+- If a moved/copied session crosses midnight, the saved end time can roll into the next day while the dashed preview only renders the visible slice inside the current day.
+- Shift-free click/drag on another session switches back to single-session selection or drag.
+- Store and React Query session/calendar caches are updated or invalidated after create, move, and delete.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Existing Cell Stretch Fix
+
+- [x] Confirm why cells with existing sessions can still stretch during placeholder drag.
+- [x] Lock monthly section/grid height so content cannot expand the month.
+- [x] Verify typecheck, lint, and build.
+
+## Review
+
+- The remaining stretch path was the month section using `min-h-full`, which lets content grow beyond the viewport-height month.
+- Monthly sections now use fixed full height with `h-full min-h-0 flex-shrink-0`.
+- The monthly grid now also has `min-h-0`, so placeholder/chip content is clipped inside the fixed cell layout instead of expanding the calendar.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Placeholder Height Stability
+
+- [x] Identify why monthly drag placeholders changed calendar cell height.
+- [x] Keep monthly grid rows fixed while placeholders push only internal session rows.
+- [x] Verify typecheck, lint, and build.
+
+## Review
+
+- Monthly grid rows now use `minmax(0, 1fr)` instead of content-sized `1fr`, preventing placeholder content from expanding the calendar row height.
+- Monthly day cells now include `min-h-0` so overflow stays inside the fixed cell.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Multi Select Group Drag
+
+- [x] Inspect current MonthView selection, copy/paste, and drag behavior.
+- [x] Allow Shift multi-select across different dates.
+- [x] Change monthly copy/paste to preserve anchor-relative date/time offsets.
+- [x] Add group drag for selected monthly sessions with anchor-relative date offsets.
+- [x] Render dashed drag placeholders as top list items that push existing chips down.
+- [x] Respect the three-visible-items limit by temporarily hiding displaced chips during drag.
+- [x] Prevent browser text selection during Shift click/drag interactions.
+- [x] Verify typecheck, lint, build, and document results.
+
+## Review
+
+- Monthly Shift-click now toggles sessions across different dates instead of resetting to the newly clicked date.
+- Monthly copy/paste and group drag now use the earliest selected session as the anchor and preserve each selected session's date offset, start time, and duration.
+- Dragging a selected group renders dashed placeholders in each predicted target day.
+- Monthly placeholders render as real top list items, pushing existing chips down instead of overlaying them.
+- Cells still show at most three list rows; placeholder rows temporarily consume those slots and displaced sessions are hidden behind the `+N개` count.
+- Shift click/drag and monthly grid interactions now prevent browser text selection of date numbers.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Weekly Multi Select Copy Paste Drag
+
+- [x] Inspect existing WeekView session click, drag, and time coordinate handling.
+- [x] Add weekly multi-select state and selected-session styling.
+- [x] Add Cmd/Ctrl+C, Cmd/Ctrl+V, Esc, and Cmd/Ctrl+Backspace behavior.
+- [x] Paste copied sessions from the hovered weekly column/time with 15-minute snapping and relative offsets.
+- [x] Add multi-session drag/drop with relative offsets and dashed previews for every moved block.
+- [x] Keep non-shift click/drag on another session as single-session selection/drag.
+- [x] Verify typecheck, lint, build, and document results.
+
+## Review
+
+- Weekly view now supports Shift-click multi-select, selected-session styling, and the same lower-left shortcut status panel as Monthly.
+- Cmd/Ctrl+C copies the selected sessions as a relative schedule anchored to the earliest selected start time.
+- Cmd/Ctrl+V pastes at the hovered weekly column/time, snapping to 15-minute starts and preserving relative offsets and durations, including sessions that roll into later dates.
+- Cmd/Ctrl+Backspace deletes the selected weekly sessions and refreshes store/query state.
+- Multi-selected session drag moves the selected group with relative offsets preserved and renders dashed drop previews for each moved block.
+- Shift-free click/drag on an unselected session collapses back to single-session selection or single-session dragging.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Calendar Delete Shortcut JSON Error
+
+- [x] Reproduce the likely error path for Cmd/Ctrl+Backspace deletion.
+- [x] Make API response parsing resilient so HTML responses do not surface raw JSON parser errors.
+- [x] Verify typecheck, lint, and build.
+- [x] Document the result and lesson.
+
+## Review
+
+- The raw `Unexpected token '<'` message came from shared API JSON parsing, likely during the calendar data refetch after the delete shortcut invalidated queries.
+- `apiGet` and `apiJson` now verify successful responses are JSON before parsing and replace parser failures with Korean fallback messages.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
 ## Optimization Refactor From FIX.md
 
 - [x] Read `OPTIMIZATION_GUIDE.md` and map the work to the harness order.
@@ -1250,3 +1387,145 @@
 - `npx tsc --noEmit` passes.
 - `npm run lint` passes with only existing `<img>` warnings.
 - `npm run build` passes.
+
+## Keyboard Copy Paste For Monthly Sessions
+
+- [x] Replace the monthly copy button with Cmd/Ctrl+C shortcut handling.
+- [x] Add Cmd/Ctrl+V paste handling using the hovered date cell.
+- [x] Keep selection/paste status visible without requiring toolbar copy interaction.
+- [x] Prevent accidental click paste while copy buffer is active.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Removed the monthly copy toolbar button.
+- Added Cmd/Ctrl+C to copy the current 2+ same-date monthly selection.
+- Added Cmd/Ctrl+V to paste copied sessions onto the currently hovered monthly date cell.
+- Preserved status/cancel UI so users can see selection and paste mode.
+- Disabled click-to-paste while the copy buffer is active to avoid accidental paste.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## Monthly Keyboard Buffer Delete Status
+
+- [x] Keep the copy buffer after paste until Esc clears it.
+- [x] Add Cmd/Ctrl+Backspace to delete selected monthly sessions.
+- [x] Move selection/copy status from the calendar top to the sidebar bottom area.
+- [x] Keep Esc as the single clear action for selection/copy state.
+- [x] Verify TypeScript/lint/build status and document the result.
+
+## Review
+
+- Copy buffer now persists after paste so the same copied sessions can be pasted repeatedly.
+- Esc clears the selection, copy buffer, and hovered paste date.
+- Cmd/Ctrl+Backspace deletes all currently selected monthly sessions, updates the store, and refreshes session/calendar caches.
+- Selection/copy status moved from the calendar top to a fixed panel in the lower-left sidebar area, so calendar height no longer changes.
+- The status panel shows copy/paste/delete shortcuts and a cancel button.
+- `npx tsc --noEmit` passes.
+- `npm run lint` passes with only existing `<img>` warnings.
+- `npm run build` passes.
+
+## FIX.md Calendar Session Optimization 1-9
+
+- [x] 1. Establish calendar state architecture so React Query remains server source and Zustand carries pending/local session overlays.
+- [x] 2. Add minimal optimistic update and pending buffer support for session create/update/delete.
+- [x] 3. Replace broad calendar invalidation in core calendar actions with direct cache patching.
+- [x] 4. Add batch update/delete API support and wire multi-select move/delete actions to one request.
+- [x] 5. Add batch create support with client temp ids/idempotency handling and wire paste/create paths where practical.
+- [x] 6. Make session modal open cache-first from calendar data, then refresh detail in the background.
+- [x] 7. Split calendar list payload from session detail payload and preserve modal detail fetches.
+- [x] 8. Add/check DB version/index support for session stale-response safety and calendar overlap queries.
+- [x] 9. Optimize drag preview movement to avoid React state updates on every mousemove.
+- [x] Verify typecheck, lint, tests/build where feasible, and document review results.
+
+## Review
+
+- Added `LessonSession.version`, `SessionBatchCreateRequest`, and migration `20260605090000_session_batch_optimizations`; applied it to the current Neon database with `prisma migrate deploy`.
+- Added `/api/sessions/batch` with batch create/update/delete, per-session result rows, update version increments, and idempotent batch create responses.
+- Added pending session overlays in Zustand so server refetches merge with pending updates/creates/deletes instead of overwriting them.
+- Added shared session cache patch helpers for `queryKeys.sessions` and all `calendarSessions` range queries, then replaced core calendar paste/delete/move broad invalidations with direct cache patching.
+- Week, day, and month paste now create temp negative-id sessions immediately, then replace them with server ids from batch create.
+- Week, day, and month group drag now save through one batch PATCH request; multi-delete now saves through one batch DELETE request.
+- Session modal now opens immediately from cached calendar/store data and refreshes detail in the background.
+- Calendar session list payload no longer includes homework rows, while `/api/sessions/:id` remains the detail source for modal data.
+- Added sidebar save-state messaging and a `beforeunload` warning when pending session changes exist.
+- Drag preview movement now uses a mounted preview layer plus `requestAnimationFrame` DOM transforms; React state no longer changes for every cursor coordinate, and drop preview state updates only when the snapped target changes.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, `npm run build`, `npx prisma validate`, and `npx prisma migrate status`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Deferred Calendar Session Flush
+
+- [x] Change calendar copy/drag/delete mutations to update UI/cache/pending only, without immediate server requests.
+- [x] Add one shared flush function that sends pending creates, updates, and deletes through the batch API.
+- [x] Flush pending session changes before sidebar navigation to records/dashboard/students/reports/settings.
+- [x] Keep beforeunload warning for pending changes that have not been flushed.
+- [x] Verify typecheck/tests/lint and document the result.
+
+## Review
+
+- Calendar paste, group drag, and multi-delete now update only local UI, React Query cache, and Zustand pending state at action time.
+- Added `flushPendingSessionChanges(queryClient)` to send pending creates, updates, and deletes through `/api/sessions/batch` only when requested.
+- Sidebar navigation now intercepts normal left-click route changes, flushes pending session changes first, and only navigates after a successful save.
+- Logout also flushes pending session changes before signing out.
+- Pending sidebar copy now says "저장되지 않은 변경사항" instead of implying an active server save.
+- Browser refresh/tab close still shows the existing `beforeunload` warning while pending changes remain.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Unified Month Picker UI
+
+- [x] Extract the custom student month picker pattern into a shared month picker component.
+- [x] Replace records month range native inputs with the shared picker.
+- [x] Replace reports month range native inputs with the shared picker.
+- [x] Keep range min/max behavior for start/end month selection.
+- [x] Verify typecheck/lint/build and document the result.
+
+## Review
+
+- Added shared `components/ui/MonthPicker.tsx` with the same button/popover/month-grid interaction style as the existing session/student date controls.
+- Replaced `type="month"` native controls in records and reports with `MonthPicker`.
+- Reworked `StartMonthPicker` to wrap the shared `MonthPicker`, so student start-month selection uses the same implementation too.
+- Preserved start/end min/max constraints for records and reports month ranges.
+- Confirmed there are no remaining app `type="month"` inputs.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- The first `npm run build` hit a transient Next page-data collection `PageNotFoundError`; rerunning `npm run build` passed.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Records Month Range Filter
+
+- [x] Inspect report month filter pattern and current record list rendering.
+- [x] Add default current-month range filters below the record search input.
+- [x] Filter records by month range before text search and sorting.
+- [x] Change record time badge to `MM/DD hh:mm ~ hh:mm`.
+- [x] Verify typecheck/lint/build and document the result.
+
+## Review
+
+- Record list now defaults its range filter to the current month.
+- Added `시작` and `종료` month inputs directly below the record search input, matching the report page's month-range behavior.
+- Record filtering now applies month range first, then sorts, then applies text search, reducing the rendered list from all sessions to the selected period.
+- Record time badges now display `MM/DD hh:mm ~ hh:mm`.
+- Added an empty-state message when no sessions match the selected period/search.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Pending Flush Timing Expansion
+
+- [x] Add 2 second debounce flush after drag end.
+- [x] Add 2 second debounce flush after copy/paste/create/delete style calendar mutations.
+- [x] Flush immediately from modal save.
+- [x] Keep immediate flush before sidebar navigation and logout.
+- [x] Keep `beforeunload` as warning-only.
+- [x] Verify typecheck/tests/lint/build and document the result.
+
+## Review
+
+- Added `schedulePendingSessionFlush(queryClient, 2000)` and timer cancellation around explicit flushes.
+- Calendar paste/create, group drag update, and multi-delete now keep optimistic UI but schedule a debounced batch flush 2 seconds after the last change.
+- Explicit `flushPendingSessionChanges` cancels any scheduled debounce first, so sidebar navigation/logout/modal save do not race with a pending timer.
+- Session modal field edits now update local/cache/pending state only; the "저장 완료" button flushes immediately and closes only on success.
+- Sidebar navigation and logout still flush immediately before leaving.
+- `beforeunload` remains warning-only.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.

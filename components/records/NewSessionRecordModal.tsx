@@ -47,6 +47,7 @@ type ApiSessionRow = {
   notes: string;
   understanding: string;
   focus: string;
+  version?: number;
   homework: { id: number; text: string; done: boolean }[];
 };
 
@@ -61,6 +62,7 @@ function apiRowToSession(row: ApiSessionRow): Session {
     understanding: row.understanding as Understanding,
     focus: row.focus as Focus,
     homework: row.homework,
+    version: row.version ?? 1,
   };
 }
 

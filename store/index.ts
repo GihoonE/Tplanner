@@ -23,6 +23,12 @@ type ExtraTimezonePreference = {
   on?: boolean;
 };
 
+type SessionPatch = Partial<Omit<Session, "id" | "homework">> & {
+  homework?: Session["homework"];
+};
+
+type SessionSaveState = "idle" | "saving" | "error" | "offline";
+
 // ── Initial timezone state ────────────────────────────────────────────────────
 const INITIAL_TZ: TzEntry[] = [
   { ...TZ_CATALOG[0], on: true, primary: true }, // KST — primary
@@ -37,6 +43,11 @@ interface TutorStore {
   sessions: Session[];
   reports: Report[];
   tzData: TzEntry[];
+  pendingSessionEdits: Record<number, SessionPatch>;
+  pendingSessionDeletes: number[];
+  pendingSessionCreates: Session[];
+  sessionSaveState: SessionSaveState;
+  sessionSaveError: string | null;
 
   // ── Calendar UI state ─────────────────────────────────────────────────────
   calView: CalendarView;
@@ -61,6 +72,13 @@ interface TutorStore {
   addSession: (s: Session) => void;
   setStudents: (students: Student[]) => void;
   setSessions: (sessions: Session[]) => void;
+  markSessionPendingUpdate: (id: number, patch: SessionPatch) => void;
+  markSessionPendingCreate: (session: Session) => void;
+  markSessionPendingDelete: (id: number) => void;
+  replaceSessionTempId: (tempId: number, session: Session) => void;
+  clearSessionPending: (ids: number[]) => void;
+  clearSessionPendingCreate: (ids: number[]) => void;
+  setSessionSaveState: (state: SessionSaveState, error?: string | null) => void;
 
   // ── Actions — calendar ────────────────────────────────────────────────────
   setCalView: (v: CalendarView) => void;
@@ -136,12 +154,43 @@ function extrasFromTzData(tzData: TzEntry[]): ExtraTimezonePreference[] {
     .map((entry) => ({ timeZone: entry.timeZone, on: entry.on }));
 }
 
+function applyPendingSessions(
+  serverSessions: Session[],
+  pendingSessionEdits: Record<number, SessionPatch>,
+  pendingSessionDeletes: number[],
+  pendingSessionCreates: Session[],
+) {
+  const deleted = new Set(pendingSessionDeletes);
+  const byId = new Map<number, Session>();
+  serverSessions.forEach((session) => {
+    if (deleted.has(session.id)) return;
+    byId.set(session.id, {
+      ...session,
+      ...(pendingSessionEdits[session.id] ?? {}),
+    });
+  });
+  pendingSessionCreates.forEach((session) => {
+    if (!deleted.has(session.id)) {
+      byId.set(session.id, {
+        ...session,
+        ...(pendingSessionEdits[session.id] ?? {}),
+      });
+    }
+  });
+  return Array.from(byId.values());
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 export const useTutorStore = create<TutorStore>((set, get) => ({
   students: [],
   sessions: [],
   reports: [],
   tzData: INITIAL_TZ,
+  pendingSessionEdits: {},
+  pendingSessionDeletes: [],
+  pendingSessionCreates: [],
+  sessionSaveState: "idle",
+  sessionSaveError: null,
 
   calView: "week",
   curWeekStart: weekStart(NOW),
@@ -158,7 +207,9 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   // ── Data actions ───────────────────────────────────────────────────────────
   upsertSession: (updated) =>
     set((state) => ({
-      sessions: state.sessions.map((s) => (s.id === updated.id ? updated : s)),
+      sessions: state.sessions.some((s) => s.id === updated.id)
+        ? state.sessions.map((s) => (s.id === updated.id ? updated : s))
+        : [...state.sessions, updated],
     })),
 
   deleteSession: (id) =>
@@ -168,11 +219,128 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       modalAnchor: state.modalSessionId === id ? null : state.modalAnchor,
     })),
 
-  addSession: (s) => set((state) => ({ sessions: [...state.sessions, s] })),
+  addSession: (s) =>
+    set((state) => ({
+      sessions: state.sessions.some((session) => session.id === s.id)
+        ? state.sessions.map((session) => (session.id === s.id ? s : session))
+        : [...state.sessions, s],
+    })),
 
   setStudents: (students) => set({ students }),
 
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) =>
+    set((state) => ({
+      sessions: applyPendingSessions(
+        sessions,
+        state.pendingSessionEdits,
+        state.pendingSessionDeletes,
+        state.pendingSessionCreates,
+      ),
+    })),
+
+  markSessionPendingUpdate: (id, patch) =>
+    set((state) => ({
+      pendingSessionEdits: {
+        ...state.pendingSessionEdits,
+        [id]: {
+          ...(state.pendingSessionEdits[id] ?? {}),
+          ...patch,
+        },
+      },
+      sessionSaveState: "saving",
+      sessionSaveError: null,
+    })),
+
+  markSessionPendingCreate: (session) =>
+    set((state) => ({
+      pendingSessionCreates: state.pendingSessionCreates.some(
+        (item) => item.id === session.id,
+      )
+        ? state.pendingSessionCreates.map((item) =>
+            item.id === session.id ? session : item,
+          )
+        : [...state.pendingSessionCreates, session],
+      sessions: state.sessions.some((item) => item.id === session.id)
+        ? state.sessions.map((item) => (item.id === session.id ? session : item))
+        : [...state.sessions, session],
+      sessionSaveState: "saving",
+      sessionSaveError: null,
+    })),
+
+  markSessionPendingDelete: (id) =>
+    set((state) => ({
+      pendingSessionDeletes: state.pendingSessionDeletes.includes(id)
+        ? state.pendingSessionDeletes
+        : [...state.pendingSessionDeletes, id],
+      sessions: state.sessions.filter((session) => session.id !== id),
+      modalOpen: state.modalSessionId === id ? false : state.modalOpen,
+      modalAnchor: state.modalSessionId === id ? null : state.modalAnchor,
+      sessionSaveState: "saving",
+      sessionSaveError: null,
+    })),
+
+  replaceSessionTempId: (tempId, session) =>
+    set((state) => {
+      const pendingSessionEdits = { ...state.pendingSessionEdits };
+      const tempPatch = pendingSessionEdits[tempId];
+      delete pendingSessionEdits[tempId];
+      if (tempPatch) {
+        pendingSessionEdits[session.id] = {
+          ...(pendingSessionEdits[session.id] ?? {}),
+          ...tempPatch,
+        };
+      }
+      return {
+        pendingSessionEdits,
+        pendingSessionCreates: state.pendingSessionCreates.filter(
+          (item) => item.id !== tempId,
+        ),
+        pendingSessionDeletes: state.pendingSessionDeletes.map((id) =>
+          id === tempId ? session.id : id,
+        ),
+        sessions: state.sessions.map((item) =>
+          item.id === tempId ? session : item,
+        ),
+      };
+    }),
+
+  clearSessionPending: (ids) =>
+    set((state) => {
+      const idSet = new Set(ids);
+      const pendingSessionEdits = { ...state.pendingSessionEdits };
+      ids.forEach((id) => delete pendingSessionEdits[id]);
+      return {
+        pendingSessionEdits,
+        pendingSessionDeletes: state.pendingSessionDeletes.filter(
+          (id) => !idSet.has(id),
+        ),
+        sessionSaveState:
+          Object.keys(pendingSessionEdits).length === 0 &&
+          state.pendingSessionDeletes.every((id) => idSet.has(id)) &&
+          state.pendingSessionCreates.length === 0
+            ? "idle"
+            : state.sessionSaveState,
+      };
+    }),
+
+  clearSessionPendingCreate: (ids) =>
+    set((state) => {
+      const idSet = new Set(ids);
+      return {
+        pendingSessionCreates: state.pendingSessionCreates.filter(
+          (session) => !idSet.has(session.id),
+        ),
+        sessionSaveState:
+          Object.keys(state.pendingSessionEdits).length === 0 &&
+          state.pendingSessionDeletes.length === 0 &&
+          state.pendingSessionCreates.every((session) => idSet.has(session.id))
+            ? "idle"
+            : state.sessionSaveState,
+      };
+    }),
+
+  setSessionSaveState: (sessionSaveState, error = null) =>
+    set({ sessionSaveState, sessionSaveError: error }),
 
   // ── Calendar actions ───────────────────────────────────────────────────────
   setCalView: (v) =>

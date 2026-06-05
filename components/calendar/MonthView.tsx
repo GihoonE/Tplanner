@@ -4,25 +4,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTutorStore, useSessions, useTzData, useNow } from "@/store";
 import {
-  apiSessionToSession,
-  queryKeys,
-  type ApiSessionRow,
-} from "@/hooks/useAppQueries";
-import {
   SessionDragPreview,
   type SessionDragPreviewState,
 } from "./SessionDragPreview";
 import { sessionEditorAnchorFromElement } from "./sessionEditorAnchor";
+import { SESSION_DRAG_THRESHOLD_PX } from "./sessionReschedule";
 import {
-  rescheduleSession,
-  SESSION_DRAG_THRESHOLD_PX,
-} from "./sessionReschedule";
+  batchCreateSessions,
+  batchDeleteSessions,
+  batchUpdateSessions,
+  cloneSessionDraft,
+} from "./sessionMutations";
 import { addDays, sameDay, fmtTz, wallClockDateInTimeZone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO } from "@/lib/constants";
 import { resolveAvatarBg } from "@/lib/studentColor";
 
 const MONTH_WINDOW = 6;
+const MONTH_VISIBLE_ITEMS = 3;
 
 function monthStart(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -44,6 +43,19 @@ function dateKey(d: Date): string {
   ].join("-");
 }
 
+function dateFromKey(key: string): Date | null {
+  const [year, month, day] = key.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(
+    target.closest("input, textarea, select, [contenteditable='true']"),
+  );
+}
+
 function monthCells(month: Date) {
   const first = monthStart(month);
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
@@ -58,6 +70,11 @@ function monthCells(month: Date) {
 
   return result;
 }
+
+type MonthDragPlaceholder = {
+  key: string;
+  dateKey: string;
+};
 
 export function MonthView({
   canRescheduleSessions = false,
@@ -76,8 +93,24 @@ export function MonthView({
   const closeModal = useTutorStore((s) => s.closeModal);
   const upsertSession = useTutorStore((s) => s.upsertSession);
   const addSession = useTutorStore((s) => s.addSession);
+  const deleteSession = useTutorStore((s) => s.deleteSession);
+  const markSessionPendingUpdate = useTutorStore((s) => s.markSessionPendingUpdate);
+  const markSessionPendingCreate = useTutorStore((s) => s.markSessionPendingCreate);
+  const markSessionPendingDelete = useTutorStore((s) => s.markSessionPendingDelete);
+  const replaceSessionTempId = useTutorStore((s) => s.replaceSessionTempId);
+  const clearSessionPending = useTutorStore((s) => s.clearSessionPending);
+  const clearSessionPendingCreate = useTutorStore((s) => s.clearSessionPendingCreate);
+  const setSessionSaveState = useTutorStore((s) => s.setSessionSaveState);
   const [anchorMonth, setAnchorMonth] = useState(() => monthStart(curMonth));
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dragPreviewRef = useRef<HTMLDivElement>(null);
+  const dragPreviewFrameRef = useRef<number | null>(null);
+  const dragPreviewPositionRef = useRef({
+    x: 0,
+    y: 0,
+    grabX: 0,
+    grabY: 0,
+  });
   const monthRefs = useRef(new Map<string, HTMLElement>());
   const scrollUpdateRef = useRef(false);
   const skipScrollToRef = useRef(false);
@@ -85,13 +118,28 @@ export function MonthView({
   const [dragPreview, setDragPreview] =
     useState<SessionDragPreviewState | null>(null);
   const [draggingSessionId, setDraggingSessionId] = useState<number | null>(null);
-  const [dropDateKey, setDropDateKey] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<number[]>([]);
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [copyBuffer, setCopyBuffer] = useState<typeof sessions | null>(null);
+  const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
+  const [dragPlaceholders, setDragPlaceholders] = useState<MonthDragPlaceholder[]>([]);
 
   const primaryOffset = getPrimaryOffset(tzData);
   const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
+
+  const moveDragPreview = useCallback(
+    (x: number, y: number, grabX: number, grabY: number) => {
+      dragPreviewPositionRef.current = { x, y, grabX, grabY };
+      if (dragPreviewFrameRef.current !== null) return;
+      dragPreviewFrameRef.current = window.requestAnimationFrame(() => {
+        dragPreviewFrameRef.current = null;
+        const node = dragPreviewRef.current;
+        if (!node) return;
+        const pos = dragPreviewPositionRef.current;
+        node.style.transform = `translate3d(${pos.x - pos.grabX}px, ${pos.y - pos.grabY}px, 0)`;
+      });
+    },
+    [],
+  );
 
   const months = useMemo(
     () =>
@@ -103,6 +151,32 @@ export function MonthView({
   const studentsById = useMemo(
     () => new Map(students.map((student) => [student.id, student])),
     [students],
+  );
+  const sessionActions = useMemo(
+    () => ({
+      addSession,
+      upsertSession,
+      deleteSession,
+      markSessionPendingUpdate,
+      markSessionPendingCreate,
+      markSessionPendingDelete,
+      replaceSessionTempId,
+      clearSessionPending,
+      clearSessionPendingCreate,
+      setSessionSaveState,
+    }),
+    [
+      addSession,
+      clearSessionPending,
+      clearSessionPendingCreate,
+      deleteSession,
+      markSessionPendingCreate,
+      markSessionPendingDelete,
+      markSessionPendingUpdate,
+      replaceSessionTempId,
+      setSessionSaveState,
+      upsertSession,
+    ],
   );
   const sessionsByDay = useMemo(() => {
     const map = new Map<string, typeof sessions>();
@@ -144,66 +218,93 @@ export function MonthView({
   }, [anchorMonth, curMonth]);
 
   useEffect(() => {
-    if(selectedSessionIds.length > 1){
+    if (selectedSessionIds.length > 1) {
       closeModal();
-    } 
-  },[selectedSessionIds])
+    }
+  }, [closeModal, selectedSessionIds.length]);
 
-  async function cloneSessionToDate(
-    source: (typeof sessions)[number],
+  function sortedSelectedSessions(ids = selectedSessionIds) {
+    return ids
+      .map((id) => sessions.find((session) => session.id === id))
+      .filter((session): session is (typeof sessions)[number] => Boolean(session))
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+
+  function buildSessionsAtTarget(
+    sources: typeof sessions,
     targetDateKey: string,
   ) {
-    const [year, month, day] = targetDateKey.split("-").map(Number);
-    const durationMs = source.end.getTime() - source.start.getTime();
-    const start = new Date(source.start);
-    start.setFullYear(year, month - 1, day);
-    const end = new Date(start.getTime() + durationMs);
+    const targetDate = dateFromKey(targetDateKey);
+    if (!targetDate) return [];
 
-    const res = await fetch("/api/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        studentId: source.studentId,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        place: source.place,
-        notes: source.notes,
-        understanding: source.understanding,
-        focus: source.focus,
-        homework: source.homework.map((item) => ({
-          text: item.text,
-          done: item.done,
-        })),
-      }),
+    const sorted = [...sources].sort(
+      (a, b) => a.start.getTime() - b.start.getTime(),
+    );
+    const anchor = sorted[0];
+    if (!anchor) return [];
+
+    const anchorDateStart = new Date(anchor.start);
+    anchorDateStart.setHours(0, 0, 0, 0);
+    const targetDateStart = new Date(targetDate);
+    targetDateStart.setHours(0, 0, 0, 0);
+    const dayDeltaMs = targetDateStart.getTime() - anchorDateStart.getTime();
+
+    return sorted.map((source) => {
+      const start = new Date(source.start.getTime() + dayDeltaMs);
+      const end = new Date(source.end.getTime() + dayDeltaMs);
+      return { source, start, end };
     });
-    if (!res.ok) throw new Error("수업 복사 실패");
-    return apiSessionToSession((await res.json()) as ApiSessionRow);
+  }
+
+  function placeholdersForTarget(
+    sources: typeof sessions,
+    targetDateKey: string | null,
+  ): MonthDragPlaceholder[] {
+    if (!targetDateKey) return [];
+    return buildSessionsAtTarget(sources, targetDateKey).map(({ source, start }) => ({
+      key: String(source.id),
+      dateKey: dateKey(start),
+    }));
   }
 
   async function pasteCopiedSessions(targetDateKey: string) {
     if (!copyBuffer || copyBuffer.length === 0) return;
     try {
-      const created = await Promise.all(
-        copyBuffer.map((session) => cloneSessionToDate(session, targetDateKey)),
+      const planned = buildSessionsAtTarget(copyBuffer, targetDateKey);
+      const created = await batchCreateSessions(
+        planned.map(({ source, start, end }) =>
+          cloneSessionDraft(source, start, end),
+        ),
+        queryClient,
+        sessionActions,
       );
-      created.forEach(addSession);
-      queryClient.setQueryData(queryKeys.sessions, (prev) =>
-        Array.isArray(prev) ? [...created, ...prev] : created,
-      );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      void queryClient.invalidateQueries({ queryKey: ["calendarSessions"] });
       setSelectedSessionIds(created.map((session) => session.id));
-      setSelectedDateKey(targetDateKey);
-      setCopyBuffer(null);
     } catch (error) {
       console.error("[MonthView] paste copied sessions failed", error);
     }
   }
 
+  async function deleteSelectedSessions() {
+    if (selectedSessionIds.length === 0) return;
+    const idsToDelete = [...selectedSessionIds];
+    try {
+      await batchDeleteSessions(idsToDelete, queryClient, sessionActions);
+      setSelectedSessionIds([]);
+      closeModal();
+    } catch (error) {
+      console.error("[MonthView] delete selected sessions failed", error);
+    }
+  }
+
+  function clearSelectionAndBuffer() {
+    setCopyBuffer(null);
+    setSelectedSessionIds([]);
+    setHoveredDateKey(null);
+    setDragPlaceholders([]);
+  }
+
   function handleCellClick(date: Date) {
-    const targetDateKey = dateKey(date);
     if (copyBuffer) {
-      void pasteCopiedSessions(targetDateKey);
       return;
     }
     jumpToDate(date);
@@ -254,21 +355,13 @@ export function MonthView({
 
     const sessionDateKey = dateKey(session.start);
     if (copyBuffer) {
-      void pasteCopiedSessions(sessionDateKey);
+      setHoveredDateKey(sessionDateKey);
       return;
     }
 
     if (e.shiftKey) {
+      e.preventDefault();
       setCopyBuffer(null);
-      if (selectedDateKey && selectedDateKey !== sessionDateKey) {
-        // 이미 선택한 날짜가 있고, 지금 클릭한 날짜와 다를때 초기화
-        // 추후 확장 예정이지만 현재는 같은 날짜 있는 애들만 복사 붙여넣기
-        setSelectedDateKey(sessionDateKey);
-        setSelectedSessionIds([session.id]);
-        return;
-      }
-
-      setSelectedDateKey(sessionDateKey);
       setSelectedSessionIds((currentIds) => {
         return currentIds.includes(session.id)
           ? currentIds.filter((id) => id !== session.id)
@@ -278,7 +371,6 @@ export function MonthView({
     }
 
     setCopyBuffer(null);
-    setSelectedDateKey(sessionDateKey);
     setSelectedSessionIds([session.id]);
     openModal(
       session.id,
@@ -288,17 +380,51 @@ export function MonthView({
   }
 
   function copySelectedSessions() {
-    const selected = selectedSessionIds
-      .map((id) => sessions.find((session) => session.id === id))
-      .filter((session): session is (typeof sessions)[number] => Boolean(session))
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+    const selected = sortedSelectedSessions();
     if (selected.length < 2) return;
-    const firstDate = dateKey(selected[0].start);
-    if (!selected.every((session) => dateKey(session.start) === firstDate)) {
-      return;
-    }
     setCopyBuffer(selected);
   }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "c") {
+        if (selectedSessionIds.length < 2) return;
+        e.preventDefault();
+        copySelectedSessions();
+        return;
+      }
+
+      if (key === "v") {
+        if (!copyBuffer || !hoveredDateKey) return;
+        e.preventDefault();
+        void pasteCopiedSessions(hoveredDateKey);
+        return;
+      }
+
+      if (key === "backspace") {
+        if (selectedSessionIds.length === 0) return;
+        e.preventDefault();
+        void deleteSelectedSessions();
+      }
+    }
+
+    function onPlainKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      if (e.key !== "Escape") return;
+      clearSelectionAndBuffer();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onPlainKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onPlainKeyDown);
+    };
+  });
 
   const handleSessionMouseDown = useCallback(
     (
@@ -311,8 +437,19 @@ export function MonthView({
       const rect = e.currentTarget.getBoundingClientRect();
       const originX = e.clientX;
       const originY = e.clientY;
+      const isGroupDrag =
+        selectedSessionIds.length > 1 && selectedSessionIds.includes(session.id);
+      const dragSources = isGroupDrag ? sortedSelectedSessions() : [session];
+      if (!isGroupDrag && !e.shiftKey) {
+        setCopyBuffer(null);
+        setSelectedSessionIds([session.id]);
+      }
       let dragging = false;
+      let previewVisible = false;
+      let lastDropDateKey: string | null = null;
       e.stopPropagation();
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
 
       function onMove(moveEvent: MouseEvent) {
         const dx = moveEvent.clientX - originX;
@@ -326,18 +463,33 @@ export function MonthView({
         dragging = true;
         suppressSessionClickRef.current = true;
         setDraggingSessionId(session.id);
-        setDropDateKey(monthDateFromPoint(moveEvent.clientX, moveEvent.clientY));
-        setDragPreview({
-          session,
-          student,
-          x: moveEvent.clientX,
-          y: moveEvent.clientY,
-          width: rect.width,
-          height: rect.height,
-          grabX: originX - rect.left,
-          grabY: originY - rect.top,
-          variant: "chip",
-        });
+        const nextDropDateKey = monthDateFromPoint(
+          moveEvent.clientX,
+          moveEvent.clientY,
+        );
+        if (nextDropDateKey !== lastDropDateKey) {
+          lastDropDateKey = nextDropDateKey;
+          setDragPlaceholders(
+            placeholdersForTarget(dragSources, nextDropDateKey),
+          );
+        }
+        const grabX = originX - rect.left;
+        const grabY = originY - rect.top;
+        if (!previewVisible) {
+          previewVisible = true;
+          setDragPreview({
+            session,
+            student,
+            x: moveEvent.clientX,
+            y: moveEvent.clientY,
+            width: rect.width,
+            height: rect.height,
+            grabX,
+            grabY,
+            variant: "chip",
+          });
+        }
+        moveDragPreview(moveEvent.clientX, moveEvent.clientY, grabX, grabY);
         moveEvent.preventDefault();
       }
 
@@ -346,28 +498,20 @@ export function MonthView({
         document.removeEventListener("mouseup", onUp);
         setDragPreview(null);
         setDraggingSessionId(null);
-        setDropDateKey(null);
+        setDragPlaceholders([]);
+        if (dragPreviewFrameRef.current !== null) {
+          window.cancelAnimationFrame(dragPreviewFrameRef.current);
+          dragPreviewFrameRef.current = null;
+        }
         if (!dragging) return;
 
         const dateValue = monthDateFromPoint(upEvent.clientX, upEvent.clientY);
         if (!dateValue) return;
 
-        const [year, month, day] = dateValue.split("-").map(Number);
-        if (!year || !month || !day) return;
-
-        const durationMs = session.end.getTime() - session.start.getTime();
-        const start = new Date(session.start);
-        start.setFullYear(year, month - 1, day);
-        const end = new Date(start.getTime() + durationMs);
+        const planned = buildSessionsAtTarget(dragSources, dateValue);
 
         try {
-          await rescheduleSession(
-            session,
-            start,
-            end,
-            queryClient,
-            upsertSession,
-          );
+          await batchUpdateSessions(planned, queryClient, sessionActions);
         } catch (error) {
           console.error("[MonthView] session reschedule failed", error);
         }
@@ -376,33 +520,35 @@ export function MonthView({
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
-    [canRescheduleSessions, queryClient, upsertSession],
+    [
+      canRescheduleSessions,
+      moveDragPreview,
+      queryClient,
+      selectedSessionIds,
+      sessionActions,
+      sessions,
+    ],
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden select-none">
       {(selectedSessionIds.length > 0 || copyBuffer) && (
-        <div className="flex flex-shrink-0 items-center gap-2 border-b border-slate-100 bg-white px-4 py-2 text-[12px]">
-          <span className="font-semibold text-slate-500">
+        <div className="fixed bottom-[86px] left-3 z-[220] w-[192px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-[11px] shadow-[0_16px_45px_rgba(15,23,42,.14)] backdrop-blur">
+          <div className="font-extrabold text-slate-800">
             {copyBuffer
-              ? `${copyBuffer.length}개 복사됨 · 붙여넣을 날짜를 클릭`
+              ? `${copyBuffer.length}개 복사됨`
               : `${selectedSessionIds.length}개 선택됨`}
-          </span>
-          {!copyBuffer && selectedSessionIds.length >= 2 && (
-            <button
-              onClick={copySelectedSessions}
-              className="rounded-lg bg-sky-600 px-3 py-1.5 font-bold text-white shadow-sm hover:bg-sky-700"
-            >
-              복사
-            </button>
-          )}
+          </div>
+          <div className="mt-1 leading-relaxed text-slate-500">
+            {copyBuffer ? "날짜 위에서 Cmd/Ctrl+V" : "Cmd/Ctrl+C 복사"}
+            <br />
+            {selectedSessionIds.length > 0 && "Cmd/Ctrl+⌫ 삭제"}
+            <br />
+            Esc 취소
+          </div>
           <button
-            onClick={() => {
-              setCopyBuffer(null);
-              setSelectedDateKey(null);
-              setSelectedSessionIds([]);
-            }}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-500 hover:bg-slate-50"
+            onClick={clearSelectionAndBuffer}
+            className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-500 hover:bg-slate-50"
           >
             취소
           </button>
@@ -436,7 +582,7 @@ export function MonthView({
                 if (node) monthRefs.current.set(key, node);
                 else monthRefs.current.delete(key);
               }}
-              className="flex min-h-full flex-col border-b border-slate-200"
+              className="flex h-full min-h-0 flex-shrink-0 flex-col border-b border-slate-200"
             >
               <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2">
                 <div className="text-[14px] font-extrabold tracking-tight text-slate-900">
@@ -445,21 +591,49 @@ export function MonthView({
               </div>
 
               <div
-                className="grid flex-1 overflow-hidden"
-                style={{ gridTemplateColumns: "repeat(7,1fr)", gridTemplateRows: "repeat(6,1fr)" }}
+                className="grid min-h-0 flex-1 overflow-hidden"
+                style={{
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  gridTemplateRows: "repeat(6, minmax(0, 1fr))",
+                }}
               >
                 {cells.map(({ date, other }, i) => {
                   const tod = sameDay(date, primaryNow);
                   const keyForDate = dateKey(date);
                   const daySes = sessionsByDay.get(keyForDate) ?? [];
+                  const placeholders = dragPlaceholders.filter(
+                    (placeholder) => placeholder.dateKey === keyForDate,
+                  );
+                  const visibleSessionLimit = Math.max(
+                    0,
+                    MONTH_VISIBLE_ITEMS - placeholders.length,
+                  );
+                  const visibleSessions = daySes.slice(0, visibleSessionLimit);
+                  const hiddenCount = Math.max(
+                    0,
+                    daySes.length - visibleSessionLimit,
+                  );
                   return (
                     <div
                       key={`${key}-${i}`}
                       data-month-date={keyForDate}
+                      onMouseEnter={() => setHoveredDateKey(keyForDate)}
+                      onMouseLeave={() => {
+                        setHoveredDateKey((current) =>
+                          current === keyForDate ? null : current,
+                        );
+                      }}
                       onClick={() => handleCellClick(date)}
-                      className={`relative cursor-pointer overflow-hidden border-r border-b border-slate-100 p-2 transition-colors hover:bg-sky-50
+                      onMouseDown={(e) => {
+                        if (e.shiftKey) {
+                          e.preventDefault();
+                          window.getSelection()?.removeAllRanges();
+                        }
+                      }}
+                      className={`relative min-h-0 cursor-pointer overflow-hidden border-r border-b border-slate-100 p-2 transition-colors hover:bg-sky-50 select-none
                         ${other ? "bg-slate-50" : ""}
                         ${copyBuffer ? "hover:bg-emerald-50" : ""}
+                        ${copyBuffer && hoveredDateKey === keyForDate ? "bg-emerald-50" : ""}
                         ${i % 7 === 6 ? "border-r-0" : ""}`}
                     >
                       <div className={`mb-1 flex h-[22px] w-[22px] items-center justify-center rounded-full text-[12px] font-bold
@@ -467,7 +641,14 @@ export function MonthView({
                         {date.getDate()}
                       </div>
 
-                      {daySes.slice(0, 3).map((s) => {
+                      {placeholders.slice(0, MONTH_VISIBLE_ITEMS).map((placeholder) => (
+                        <div
+                          key={`placeholder-${placeholder.key}-${keyForDate}`}
+                          className="pointer-events-none mb-0.5 h-[18px] rounded border-2 border-dashed border-sky-500 bg-sky-500/10"
+                        />
+                      ))}
+
+                      {visibleSessions.map((s) => {
                         const st =
                           s.studentId == null ? undefined : studentsById.get(s.studentId);
                         const chip = {
@@ -481,7 +662,13 @@ export function MonthView({
                             onMouseDown={(e) => handleSessionMouseDown(e, s, st)}
                             onClick={(e) => handleSessionClick(e, s)}
                             className={`mb-0.5 cursor-pointer truncate rounded px-1.5 py-0.5 text-[10px] font-bold shadow-sm hover:opacity-90 ${
-                              draggingSessionId === s.id ? "opacity-25" : ""
+                              draggingSessionId === s.id ||
+                              (draggingSessionId !== null &&
+                                selectedSessionIds.length > 1 &&
+                                selectedSessionIds.includes(draggingSessionId) &&
+                                selectedSessionIds.includes(s.id))
+                                ? "opacity-25"
+                                : ""
                             } ${
                               selectedSessionIds.includes(s.id)
                                 ? "ring-2 ring-sky-900 ring-offset-1 ring-offset-white brightness-110"
@@ -494,13 +681,10 @@ export function MonthView({
                         );
                       })}
 
-                      {daySes.length > 3 && (
+                      {hiddenCount > 0 && (
                         <div className="cursor-pointer px-1 text-[10px] font-semibold text-sky-600 hover:underline">
-                          +{daySes.length - 3}개
+                          +{hiddenCount}개
                         </div>
-                      )}
-                      {dropDateKey === keyForDate && (
-                        <div className="pointer-events-none absolute left-2 right-2 top-8 h-[22px] rounded border-2 border-dashed border-sky-500 bg-sky-500/10" />
                       )}
                     </div>
                   );
@@ -510,7 +694,11 @@ export function MonthView({
           );
         })}
       </div>
-      <SessionDragPreview preview={dragPreview} primaryOffset={primaryOffset} />
+      <SessionDragPreview
+        preview={dragPreview}
+        primaryOffset={primaryOffset}
+        previewRef={dragPreviewRef}
+      />
     </div>
   );
 }

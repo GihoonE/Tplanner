@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useTutorStore } from "@/store";
+import { flushPendingSessionChanges } from "@/components/calendar/sessionMutations";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "📊", label: "대시보드" },
@@ -19,9 +22,19 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const path = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: authSession } = useSession();
   const [profileOpen, setProfileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const sessionSaveState = useTutorStore((s) => s.sessionSaveState);
+  const sessionSaveError = useTutorStore((s) => s.sessionSaveError);
+  const hasPendingSessionChanges = useTutorStore(
+    (s) =>
+      Object.keys(s.pendingSessionEdits).length > 0 ||
+      s.pendingSessionDeletes.length > 0 ||
+      s.pendingSessionCreates.length > 0,
+  );
   const role = authSession?.user?.role;
   const displayName =
     authSession?.user?.name ?? (role === "parent" ? "학부모" : "선생님");
@@ -30,6 +43,10 @@ export function Sidebar() {
   const profileImage = authSession?.user?.image;
 
   async function handleLogout() {
+    if (hasPendingSessionChanges) {
+      const saved = await flushPendingSessionChanges(queryClient);
+      if (!saved) return;
+    }
     setLoggingOut(true);
     try {
       await fetch("/api/auth/revoke-oauth", {
@@ -39,6 +56,28 @@ export function Sidebar() {
     } finally {
       await signOut({ callbackUrl: "/login" });
     }
+  }
+
+  async function handleNavigate(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+  ) {
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.button !== 0
+    ) {
+      return;
+    }
+    if (path.startsWith(href)) return;
+    event.preventDefault();
+    if (hasPendingSessionChanges) {
+      const saved = await flushPendingSessionChanges(queryClient);
+      if (!saved) return;
+    }
+    router.push(href);
   }
 
   return (
@@ -56,12 +95,35 @@ export function Sidebar() {
       {/* Main nav */}
       <nav className="flex flex-col gap-0.5">
         {NAV_ITEMS.map((item) => (
-          <NavItem key={item.href} {...item} active={path.startsWith(item.href)} />
+          <NavItem
+            key={item.href}
+            {...item}
+            active={path.startsWith(item.href)}
+            onNavigate={handleNavigate}
+          />
         ))}
       </nav>
 
       {/* Profile */}
       <div className="relative mt-auto">
+        {sessionSaveState !== "idle" && (
+          <div
+            className={cn(
+              "mb-2 rounded-xl border px-3 py-2 text-[11px] font-semibold",
+              sessionSaveState === "error"
+                ? "border-red-100 bg-red-50 text-red-600"
+                : "border-sky-100 bg-sky-50 text-sky-700",
+            )}
+          >
+            {sessionSaveState === "error"
+              ? sessionSaveError ?? "저장 실패 - 다시 시도"
+              : sessionSaveState === "offline"
+                ? "오프라인 - 연결되면 저장"
+                : hasPendingSessionChanges
+                  ? "저장되지 않은 변경사항"
+                  : "저장 중..."}
+          </div>
+        )}
         <div
           className={cn(
             "absolute bottom-[58px] left-0 right-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,.12)] transition-all duration-200",
@@ -163,16 +225,22 @@ function NavItem({
   label,
   badge,
   active,
+  onNavigate,
 }: {
   href: string;
   icon: string;
   label: string;
   badge?: number;
   active: boolean;
+  onNavigate: (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+  ) => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={(event) => void onNavigate(event, href)}
       className={cn(
         "flex items-center gap-[10px] px-[10px] py-[9px] rounded-xl text-[13px] font-medium transition-all",
         active
