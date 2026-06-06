@@ -37,6 +37,7 @@ function normalizeUrl(url: URL) {
 
 function isPublicPath(pathname: string) {
   return (
+    pathname === "/" ||
     pathname === "/login" ||
     pathname === "/privacy" ||
     pathname.startsWith("/docs/")

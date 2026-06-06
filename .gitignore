@@ -42,4 +42,10 @@ Thumbs.db
 # IDE (선택: 팀에서 공유하면 해당 줄 제거)
 .idea/
 
+# README files
+**/[Rr][Ee][Aa][Dd][Mm][Ee].md
+!/[Rr][Ee][Aa][Dd][Mm][Ee].md
+FIX.md
+docs/problem_shooting.md
+
 tasks/

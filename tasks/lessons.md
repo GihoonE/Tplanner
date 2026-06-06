@@ -21,3 +21,7 @@
 - 월간 캘린더 한 달 화면이 정확히 viewport 한 장이어야 하면 month wrapper에 `min-h-full`만 쓰지 않는다. `min-h-full`은 content가 많을 때 더 커질 수 있으므로 `h-full min-h-0 flex-shrink-0`로 section 높이도 고정한다.
 - 일간 캘린더에서 offset-preserving group drag preview는 전체 새 세션 범위를 그대로 그리지 말고 현재 day와 교차하는 `visibleSlice`만 렌더링한다. 저장 데이터는 자정 이후 end를 유지하되 preview는 현재 화면에 보이는 부분만 보여준다.
 - Pending Buffer 설계에서 "optimistic update"와 "즉시 서버 저장"을 같은 것으로 취급하지 않는다. 사용자가 지연 저장을 원하면 캘린더 액션은 UI/cache/pending만 갱신하고, 서버 batch 저장은 명시된 flush 트리거(예: 다른 페이지 이동, 로그아웃, 이탈)에서 실행한다.
+- 연속 스크롤 월간 캘린더에서 leading/trailing placeholder 날짜를 실제 월 섹션의 기준점으로 쓰지 않는다. 활성 월 스타일과 `1일` scroll anchor는 section month 소속 셀에만 적용하고, placeholder는 date key/drop target만 유지한다.
+- 월간 캘린더를 자연스럽게 이어 붙이려면 월별 42-cell grid를 그대로 stack하지 않는다. 월 경계 주간이 이전 달 trailing row와 다음 달 leading row로 중복되므로, 표시 모델은 unique week-row stream으로 만들고 월 표시는 cell 날짜/`1일` anchor에서 파생한다.
+- 정적 landing JS를 React로 옮길 때 body/window 스크롤을 내부 scroll container로 바꾸면 pinned section progress도 같은 container 좌표계로 다시 계산한다. `window.scrollY`/viewport rect만 그대로 쓰면 단계형 이미지 전환이 멈춘 것처럼 보일 수 있다.
+- `useEffect` 안에서 store/state를 업데이트할 때 그 store/state 배열을 같은 effect dependency에 넣으면 fetch-update-fetch 루프가 생길 수 있다. 캐시 표시 effect와 서버 상세 fetch effect는 dependency가 다르면 분리한다.

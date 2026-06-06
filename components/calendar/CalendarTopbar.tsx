@@ -21,7 +21,7 @@ export function CalendarTopbar({
   const view         = useCalView();
   const tzData       = useTzData();
   const curWeekStart = useTutorStore((s) => s.curWeekStart);
-  const curMonth     = useTutorStore((s) => s.curMonth);
+  const activeMonth  = useTutorStore((s) => s.calendarActiveMonth);
   const curDay       = useTutorStore((s) => s.curDay);
   const setCalView   = useTutorStore((s) => s.setCalView);
   const navigateWeek = useTutorStore((s) => s.navigateWeek);
@@ -41,7 +41,7 @@ export function CalendarTopbar({
       return `${formatMonthDay(curWeekStart)} — ${formatMonthDay(end)}`;
     }
     if (view === "month")
-      return `${curMonth.getFullYear()}년 ${curMonth.getMonth() + 1}월`;
+      return `${activeMonth.getFullYear()}년 ${activeMonth.getMonth() + 1}월`;
     return `${curDay.getMonth() + 1}월 ${curDay.getDate()}일`;
   }
 

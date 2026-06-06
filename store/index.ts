@@ -53,6 +53,7 @@ interface TutorStore {
   calView: CalendarView;
   curWeekStart: Date;
   curMonth: Date;
+  calendarActiveMonth: Date;
   curDay: Date;
   /** Simulated "now" so the demo always shows a sensible current time */
   now: Date;
@@ -88,6 +89,7 @@ interface TutorStore {
   goToday: () => void;
   jumpToDate: (d: Date) => void;
   setNow: (d: Date) => void;
+  setCalendarActiveMonth: (d: Date) => void;
 
   // ── Actions — modal ───────────────────────────────────────────────────────
   openModal: (
@@ -195,6 +197,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   calView: "week",
   curWeekStart: weekStart(NOW),
   curMonth: new Date(NOW.getFullYear(), NOW.getMonth(), 1),
+  calendarActiveMonth: new Date(NOW.getFullYear(), NOW.getMonth(), 1),
   curDay: new Date(NOW),
   now: NOW,
 
@@ -350,12 +353,14 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
           calView: v,
           curWeekStart: weekStart(state.curDay),
           curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+          calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
         };
       }
       if (v === "month") {
         return {
           calView: v,
           curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+          calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
           curWeekStart: weekStart(state.curDay),
         };
       }
@@ -363,6 +368,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
         calView: v,
         curWeekStart: weekStart(state.curDay),
         curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+        calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
       };
     }),
 
@@ -373,6 +379,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
         curWeekStart,
         curDay: new Date(curWeekStart),
         curMonth: new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), 1),
+        calendarActiveMonth: new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), 1),
       };
     }),
 
@@ -385,6 +392,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       );
       return {
         curMonth,
+        calendarActiveMonth: new Date(curMonth),
         curDay: new Date(curMonth),
         curWeekStart: weekStart(curMonth),
       };
@@ -397,6 +405,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
         curDay,
         curWeekStart: weekStart(curDay),
         curMonth: new Date(curDay.getFullYear(), curDay.getMonth(), 1),
+        calendarActiveMonth: new Date(curDay.getFullYear(), curDay.getMonth(), 1),
       };
     }),
 
@@ -404,6 +413,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
     set((state) => ({
       curWeekStart: weekStart(state.now),
       curMonth: new Date(state.now.getFullYear(), state.now.getMonth(), 1),
+      calendarActiveMonth: new Date(state.now.getFullYear(), state.now.getMonth(), 1),
       curDay: new Date(state.now),
     })),
 
@@ -412,9 +422,15 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       curWeekStart: weekStart(d),
       curDay: new Date(d),
       curMonth: new Date(d.getFullYear(), d.getMonth(), 1),
+      calendarActiveMonth: new Date(d.getFullYear(), d.getMonth(), 1),
     }),
 
   setNow: (d) => set({ now: new Date(d) }),
+
+  setCalendarActiveMonth: (d) =>
+    set({
+      calendarActiveMonth: new Date(d.getFullYear(), d.getMonth(), 1),
+    }),
 
   // ── Modal actions ──────────────────────────────────────────────────────────
   openModal: (sessionId, tab = "detail", anchor = null) =>

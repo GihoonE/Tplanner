@@ -55,7 +55,7 @@ export function AccountSettings() {
         cache: "no-store",
       });
     } finally {
-      await signOut({ callbackUrl: "/login" });
+      await signOut({ callbackUrl: "/" });
     }
   }
 

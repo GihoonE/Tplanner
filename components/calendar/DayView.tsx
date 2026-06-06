@@ -375,7 +375,7 @@ export function DayView({
 
       const key = e.key.toLowerCase();
       if (key === "c") {
-        if (selectedSessionIds.length < 2) return;
+        if (selectedSessionIds.length < 1) return;
         e.preventDefault();
         copySelectedSessions();
         return;

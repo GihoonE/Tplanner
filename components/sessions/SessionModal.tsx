@@ -244,6 +244,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
       setSession(null);
       return;
     }
+
     const cached = sessions.find((item) => item.id === modalSessionId);
     if (cached) {
       setSession(cached);
@@ -251,8 +252,24 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
     } else {
       setLoading(true);
     }
+  }, [modalOpen, modalSessionId, sessions]);
+
+  useEffect(() => {
+    if (!modalOpen || !modalSessionId) {
+      return;
+    }
+
     setError(null);
     let cancelled = false;
+    const hadCachedSession = Boolean(
+      useTutorStore
+        .getState()
+        .sessions.find((item) => item.id === modalSessionId),
+    );
+    if (!hadCachedSession) {
+      setLoading(true);
+    }
+
     fetch(`/api/sessions/${modalSessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error("조회 실패");
@@ -266,7 +283,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
         patchSessionCaches(queryClient, [nextSession]);
       })
       .catch((e) => {
-        if (!cancelled && !cached) {
+        if (!cancelled && !hadCachedSession) {
           setError(e instanceof Error ? e.message : "오류");
         }
       })
@@ -276,7 +293,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, modalSessionId, queryClient, sessions, upsertSession]);
+  }, [modalOpen, modalSessionId, queryClient, upsertSession]);
 
   useEffect(() => {
     setDragOffset({ x: 0, y: 0 });

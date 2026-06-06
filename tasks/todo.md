@@ -1,3 +1,108 @@
+## Session Detail Fetch Loop Fix
+
+- [x] Identify why `/api/sessions/:id` repeated while a session modal stayed open.
+- [x] Split cached session display from server detail fetching in `SessionModal`.
+- [x] Document the troubleshooting process in `docs/problem_shooting.md`.
+- [x] Verify typecheck/lint/tests.
+
+## Review
+
+- The repeated API calls were caused by a fetch effect that depended on `sessions` while also calling `upsertSession`, which changed `sessions` and retriggered the fetch.
+- `SessionModal` now has one effect for showing cached store data and a separate effect that fetches server detail only when `modalOpen`/`modalSessionId` changes.
+- Added the issue, cause, and fix pattern to `docs/problem_shooting.md`.
+- Added a short lesson to `tasks/lessons.md` about avoiding fetch-update-fetch loops from effect dependencies.
+- Verified `npx tsc --noEmit`, `npm run lint`, and `npm test`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Landing Report Stage Progress Fix
+
+- [x] Confirm the report section should crossfade through four screenshots while pinned.
+- [x] Recalculate report progress using the `.landing-page` scroll container coordinate system.
+- [x] Preserve the existing step activation, progress ring, and report image crossfade behavior.
+- [x] Verify typecheck/lint/tests/build.
+
+## Review
+
+- Updated `components/landing/LandingPage.tsx` so report pinned progress uses the landing scroll container's `scrollTop`, `clientHeight`, and container-relative pin top instead of relying on window-style rect math.
+- This restores the original four-stage report behavior after the static landing was moved into an internal React scroll container.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings outside the landing component.
+
+## Public Landing Page Integration
+
+- [x] Move landing assets into `public/images/landing` for consistency with existing public image structure.
+- [x] Replace `/` calendar redirect with a React landing page.
+- [x] Convert login CTAs to relative `/login` links.
+- [x] Disable the missing terms link while keeping the footer text visible.
+- [x] Replace the Cloudflare email link with `mailto:leegihun8752@gmail.com`.
+- [x] Open `/` in middleware as a public route.
+- [x] Verify typecheck/lint/tests/build and local landing response.
+
+## Review
+
+- Added `components/landing/LandingPage.tsx` with JSX-rendered landing sections and React `useEffect` scroll/reveal/report-progress behavior.
+- Added `app/landing.css` from the provided landing source and imported it from the root page.
+- Updated `app/page.tsx` so `/` renders the public landing page instead of redirecting to `/calendar`.
+- Updated `middleware.ts` so `/` is public and no longer redirects anonymous visitors to login.
+- Copied landing assets from `public/landing_source/assets` to `public/images/landing`.
+- Changed CTA/login links to `/login`, changed footer contact to `mailto:leegihun8752@gmail.com`, and rendered `이용약관` as disabled text because `/terms` does not exist.
+- Used `next/image` for landing images to avoid adding new image lint warnings.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings outside the new landing component.
+- Confirmed `http://localhost:3000/` returns 200 and `http://localhost:3000/images/landing/hero-calendar.png` returns 200.
+
+## TutorDesk Design System Handoff
+
+- [x] Audit current TutorDesk UI foundations and reusable component patterns.
+- [x] Create root `design-system/README.md` as the primary web/app handoff document.
+- [x] Include React Native translation notes for tokens, shadows, typography, and interaction states.
+- [x] Document component, layout, calendar, records, reports, and accessibility guidance.
+- [x] Verify the document is present and review-ready.
+
+## Review
+
+- Added `design-system/README.md` as the root design system handoff document.
+- Documented TutorDesk's product personality, platform scope, color roles, student/session colors, typography, spacing, radius, shadows, motion, layout, component standards, calendar system, records/reports patterns, status feedback, accessibility, React Native translation rules, and QA checklist.
+- Included a React Native token object starter using the current TutorDesk UI values.
+- Pointed teams to current source references such as `app/globals.css`, `Button`, `MonthPicker`, `Sidebar`, `CalendarTopbar`, `SessionBlock`, `MonthView`, `RecordEditor`, and reports.
+- Verified the generated README is present and readable.
+
+
+## Continuous Monthly Week Stream
+
+- [x] Replace month-section grids with a unique week-row stream so boundary weeks render once.
+- [x] Keep `M월 1일` labels and active-month styling based on actual date month.
+- [x] Preserve local date keys, drop targets, placeholders, hidden counts, and session chips.
+- [x] Update scroll-to-month and active-month detection against canonical `1일` cells in the week stream.
+- [x] Verify typecheck/lint/test/build and document the result.
+
+## Review
+
+- MonthView now builds one continuous, unique sequence of week rows from the visible month window instead of rendering a separate 42-cell grid per month.
+- Boundary weeks such as `5/31 ~ 6/6` are generated once, so they cannot appear as both the previous month's trailing row and the next month's leading row.
+- Active-month styling now applies directly by each cell's real date month in the unique week stream.
+- `M월 1일` labels and active-month scroll anchors are attached to the canonical first-day cell only.
+- Local `YYYY-MM-DD` date keys, drop targets, drag placeholders, hidden `+N개` counts, and session chips were preserved.
+- Week row height is measured from the scroll container with `ResizeObserver`, keeping roughly six rows visible without recalculating during scroll.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Monthly Placeholder Active Month Fix
+
+- [x] Confirm why trailing next-month rows can remain visually active after scrolling.
+- [x] Limit active-month styling to cells that belong to their rendered month section.
+- [x] Limit active-month scroll anchors to canonical section first-day cells.
+- [x] Verify typecheck/lint/build and document the result.
+
+## Review
+
+- The trailing/leading cells in each 42-cell monthly grid still keep their local `YYYY-MM-DD` date keys and remain valid drop targets.
+- Active-month white styling now applies only when the date belongs to the rendered month section, so June's trailing July cells stay gray even after July becomes active.
+- Scroll-based active-month detection now registers only canonical first-day cells from each month section, avoiding duplicated placeholder `1일` cells as activation anchors.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+
 ## FIX.md Optimization Plan Review
 
 - [x] Read the user's implementation notes in `FIX.md`.
@@ -1452,6 +1557,28 @@
 - Added sidebar save-state messaging and a `beforeunload` warning when pending session changes exist.
 - Drag preview movement now uses a mounted preview layer plus `requestAnimationFrame` DOM transforms; React state no longer changes for every cursor coordinate, and drop preview state updates only when the snapped target changes.
 - Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, `npm run build`, `npx prisma validate`, and `npx prisma migrate status`.
+- `npm run lint` still reports only the existing seven `<img>` warnings.
+
+## Monthly Active Month Scroll Styling
+
+- [x] Add display-only active month state separate from scroll/render anchor state.
+- [x] Track the first-day cell for each month and update active month with a RAF-throttled 50% scroll threshold calculation.
+- [x] Style month cells by active month instead of section membership, with smooth color transitions.
+- [x] Render first day labels as `M월 1일`.
+- [x] Preserve local date keys, drag/drop placeholders, and session chip behavior.
+- [x] Verify typecheck/lint/build and document the result.
+
+## Review
+
+- Added `calendarActiveMonth` to the calendar store so MonthView can update the displayed month without changing the render/window anchor month on every scroll.
+- CalendarTopbar now displays `calendarActiveMonth` for month view.
+- MonthView tracks visible first-day cells and updates the active month against the scroll container's 50% line using `requestAnimationFrame` throttling.
+- Removed the per-month section header from the scroll body so the grid reads more continuously.
+- Month cells now style by `activeMonth` membership: active month dates stay white/clear, inactive month dates fade to gray, with `transition-colors duration-200`.
+- First-day cells now show `M월 1일` while other dates keep numeric labels.
+- Local `YYYY-MM-DD` date keys, drop targets, placeholders, `+N개`, and session chip rendering were kept intact.
+- Optimized monthly session grouping by building visible date keys and scanning sessions once instead of filtering all sessions for every rendered day cell.
+- Verified `npx tsc --noEmit`, `npm test`, `npm run lint`, and `npm run build`.
 - `npm run lint` still reports only the existing seven `<img>` warnings.
 
 ## Deferred Calendar Session Flush

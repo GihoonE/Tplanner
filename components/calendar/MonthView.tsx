@@ -31,6 +31,10 @@ function addMonths(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth() + n, 1);
 }
 
+function weekStart(d: Date): Date {
+  return addDays(d, -d.getDay());
+}
+
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -56,21 +60,6 @@ function isEditableTarget(target: EventTarget | null) {
   );
 }
 
-function monthCells(month: Date) {
-  const first = monthStart(month);
-  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
-  const result: { date: Date; other: boolean }[] = [];
-
-  for (let i = 0; i < first.getDay(); i++)
-    result.push({ date: addDays(first, i - first.getDay()), other: true });
-  for (let d = 1; d <= last.getDate(); d++)
-    result.push({ date: new Date(first.getFullYear(), first.getMonth(), d), other: false });
-  while (result.length < 42)
-    result.push({ date: addDays(result[result.length - 1].date, 1), other: true });
-
-  return result;
-}
-
 type MonthDragPlaceholder = {
   key: string;
   dateKey: string;
@@ -87,6 +76,8 @@ export function MonthView({
   const now         = useNow();
   const students    = useTutorStore((s) => s.students);
   const curMonth    = useTutorStore((s) => s.curMonth);
+  const activeMonth = useTutorStore((s) => s.calendarActiveMonth);
+  const setCalendarActiveMonth = useTutorStore((s) => s.setCalendarActiveMonth);
   const jumpToDate  = useTutorStore((s) => s.jumpToDate);
   const setCalView  = useTutorStore((s) => s.setCalView);
   const openModal   = useTutorStore((s) => s.openModal);
@@ -111,9 +102,8 @@ export function MonthView({
     grabX: 0,
     grabY: 0,
   });
-  const monthRefs = useRef(new Map<string, HTMLElement>());
-  const scrollUpdateRef = useRef(false);
-  const skipScrollToRef = useRef(false);
+  const firstDayRefs = useRef(new Map<string, { date: Date; node: HTMLElement }>());
+  const activeMonthFrameRef = useRef<number | null>(null);
   const suppressSessionClickRef = useRef(false);
   const [dragPreview, setDragPreview] =
     useState<SessionDragPreviewState | null>(null);
@@ -122,9 +112,11 @@ export function MonthView({
   const [copyBuffer, setCopyBuffer] = useState<typeof sessions | null>(null);
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
   const [dragPlaceholders, setDragPlaceholders] = useState<MonthDragPlaceholder[]>([]);
+  const [weekRowHeight, setWeekRowHeight] = useState(0);
 
   const primaryOffset = getPrimaryOffset(tzData);
   const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
+  const activeMonthKey = monthKey(activeMonth);
 
   const moveDragPreview = useCallback(
     (x: number, y: number, grabX: number, grabY: number) => {
@@ -148,6 +140,30 @@ export function MonthView({
       ),
     [anchorMonth],
   );
+  const weekRows = useMemo(() => {
+    const firstMonth = months[0] ?? anchorMonth;
+    const lastMonth = months[months.length - 1] ?? anchorMonth;
+    const start = weekStart(monthStart(firstMonth));
+    const lastDay = new Date(
+      lastMonth.getFullYear(),
+      lastMonth.getMonth() + 1,
+      0,
+    );
+    const end = weekStart(lastDay);
+    const rows: Date[][] = [];
+
+    for (
+      let cursor = new Date(start);
+      cursor.getTime() <= end.getTime();
+      cursor = addDays(cursor, 7)
+    ) {
+      rows.push(
+        Array.from({ length: 7 }, (_, dayIndex) => addDays(cursor, dayIndex)),
+      );
+    }
+
+    return rows;
+  }, [anchorMonth, months]);
   const studentsById = useMemo(
     () => new Map(students.map((student) => [student.id, student])),
     [students],
@@ -178,44 +194,94 @@ export function MonthView({
       upsertSession,
     ],
   );
-  const sessionsByDay = useMemo(() => {
-    const map = new Map<string, typeof sessions>();
-    months.forEach((month) => {
-      monthCells(month).forEach(({ date }) => {
-        const key = dateKey(date);
-        if (map.has(key)) return;
-        map.set(
-          key,
-          sessions
-            .filter((session) => sameDay(session.start, date))
-            .sort((a, b) => a.start.getTime() - b.start.getTime()),
-        );
+  const visibleDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    weekRows.forEach((week) => {
+      week.forEach((date) => {
+        keys.add(dateKey(date));
       });
     });
+    return keys;
+  }, [weekRows]);
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, typeof sessions>();
+    visibleDateKeys.forEach((key) => map.set(key, []));
+    sessions.forEach((session) => {
+      const key = dateKey(session.start);
+      const bucket = map.get(key);
+      if (!bucket) return;
+      bucket.push(session);
+    });
+    map.forEach((bucket, key) => {
+      map.set(
+        key,
+        [...bucket].sort((a, b) => a.start.getTime() - b.start.getTime()),
+      );
+    });
     return map;
-  }, [months, sessions]);
+  }, [sessions, visibleDateKeys]);
 
   useEffect(() => {
-    if (scrollUpdateRef.current) {
-      scrollUpdateRef.current = false;
-      return;
-    }
     setAnchorMonth(monthStart(curMonth));
   }, [curMonth]);
 
   useEffect(() => {
-    if (skipScrollToRef.current) {
-      skipScrollToRef.current = false;
-      return;
-    }
     const container = scrollRef.current;
-    const target = monthRefs.current.get(monthKey(curMonth));
+    const target = firstDayRefs.current.get(dateKey(monthStart(curMonth)))?.node;
     if (!container || !target) return;
     container.scrollTo({
       top: target.offsetTop - container.offsetTop,
       behavior: "smooth",
     });
-  }, [anchorMonth, curMonth]);
+  }, [anchorMonth, curMonth, weekRows]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const updateRowHeight = () => {
+      setWeekRowHeight(Math.max(88, container.clientHeight / 6));
+    };
+    updateRowHeight();
+
+    const observer = new ResizeObserver(updateRowHeight);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const updateActiveMonthFromScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    const threshold = containerRect.top + container.clientHeight / 2;
+    let nextMonth = months[0] ?? monthStart(curMonth);
+    let closestTop = Number.NEGATIVE_INFINITY;
+
+    firstDayRefs.current.forEach(({ date, node }) => {
+      const top = node.getBoundingClientRect().top;
+      if (top <= threshold && top > closestTop) {
+        closestTop = top;
+        nextMonth = monthStart(date);
+      }
+    });
+
+    if (
+      monthKey(nextMonth) !==
+      monthKey(useTutorStore.getState().calendarActiveMonth)
+    ) {
+      setCalendarActiveMonth(nextMonth);
+    }
+  }, [curMonth, months, setCalendarActiveMonth]);
+
+  useEffect(() => {
+    updateActiveMonthFromScroll();
+    return () => {
+      if (activeMonthFrameRef.current !== null) {
+        window.cancelAnimationFrame(activeMonthFrameRef.current);
+        activeMonthFrameRef.current = null;
+      }
+    };
+  }, [updateActiveMonthFromScroll]);
 
   useEffect(() => {
     if (selectedSessionIds.length > 1) {
@@ -312,28 +378,11 @@ export function MonthView({
   }
 
   function handleScroll() {
-    const container = scrollRef.current;
-    if (!container) return;
-
-    const center = container.scrollTop + container.clientHeight / 2;
-    let closestDate: Date | null = null;
-    let closestDistance = Number.POSITIVE_INFINITY;
-
-    months.forEach((month) => {
-      const node = monthRefs.current.get(monthKey(month));
-      if (!node) return;
-      const mid = node.offsetTop - container.offsetTop + node.offsetHeight / 2;
-      const distance = Math.abs(center - mid);
-      if (distance < closestDistance) {
-        closestDate = month;
-        closestDistance = distance;
-      }
+    if (activeMonthFrameRef.current !== null) return;
+    activeMonthFrameRef.current = window.requestAnimationFrame(() => {
+      activeMonthFrameRef.current = null;
+      updateActiveMonthFromScroll();
     });
-
-    if (!closestDate || monthKey(closestDate) === monthKey(curMonth)) return;
-    scrollUpdateRef.current = true;
-    skipScrollToRef.current = true;
-    jumpToDate(closestDate);
   }
 
   function monthDateFromPoint(x: number, y: number): string | null {
@@ -381,7 +430,10 @@ export function MonthView({
 
   function copySelectedSessions() {
     const selected = sortedSelectedSessions();
-    if (selected.length < 2) return;
+    if (selected.length < 1) return;
+    if (selected.length == 1){
+      closeModal();
+    }
     setCopyBuffer(selected);
   }
 
@@ -392,7 +444,7 @@ export function MonthView({
 
       const key = e.key.toLowerCase();
       if (key === "c") {
-        if (selectedSessionIds.length < 2) return;
+        if (selectedSessionIds.length < 1) return;
         e.preventDefault();
         copySelectedSessions();
         return;
@@ -571,35 +623,24 @@ export function MonthView({
         className="flex-1 overflow-y-auto bg-white"
         style={{ scrollbarWidth: "thin" }}
       >
-        {months.map((month) => {
-          const key = monthKey(month);
-          const cells = monthCells(month);
+        <div className="min-h-full">
+          {weekRows.map((week) => {
+            const weekKey = dateKey(week[0]);
 
-          return (
-            <section
-              key={key}
-              ref={(node) => {
-                if (node) monthRefs.current.set(key, node);
-                else monthRefs.current.delete(key);
-              }}
-              className="flex h-full min-h-0 flex-shrink-0 flex-col border-b border-slate-200"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2">
-                <div className="text-[14px] font-extrabold tracking-tight text-slate-900">
-                  {month.getFullYear()}년 {month.getMonth() + 1}월
-                </div>
-              </div>
-
+            return (
               <div
-                className="grid min-h-0 flex-1 overflow-hidden"
+                key={weekKey}
+                className="grid min-h-[88px] overflow-hidden border-b border-slate-100"
                 style={{
                   gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                  gridTemplateRows: "repeat(6, minmax(0, 1fr))",
+                  height: weekRowHeight > 0 ? `${weekRowHeight}px` : undefined,
                 }}
               >
-                {cells.map(({ date, other }, i) => {
+                {week.map((date, i) => {
                   const tod = sameDay(date, primaryNow);
                   const keyForDate = dateKey(date);
+                  const isFirstDay = date.getDate() === 1;
+                  const isActiveMonth = monthKey(date) === activeMonthKey;
                   const daySes = sessionsByDay.get(keyForDate) ?? [];
                   const placeholders = dragPlaceholders.filter(
                     (placeholder) => placeholder.dateKey === keyForDate,
@@ -615,7 +656,18 @@ export function MonthView({
                   );
                   return (
                     <div
-                      key={`${key}-${i}`}
+                      key={keyForDate}
+                      ref={(node) => {
+                        if (!isFirstDay) return;
+                        if (node) {
+                          firstDayRefs.current.set(keyForDate, {
+                            date,
+                            node,
+                          });
+                        } else {
+                          firstDayRefs.current.delete(keyForDate);
+                        }
+                      }}
                       data-month-date={keyForDate}
                       onMouseEnter={() => setHoveredDateKey(keyForDate)}
                       onMouseLeave={() => {
@@ -630,15 +682,17 @@ export function MonthView({
                           window.getSelection()?.removeAllRanges();
                         }
                       }}
-                      className={`relative min-h-0 cursor-pointer overflow-hidden border-r border-b border-slate-100 p-2 transition-colors hover:bg-sky-50 select-none
-                        ${other ? "bg-slate-50" : ""}
+                      className={`relative min-h-0 cursor-pointer overflow-hidden border-r border-b border-slate-100 p-2 transition-colors duration-200 select-none
+                        ${isActiveMonth ? "bg-white hover:bg-sky-50" : "bg-slate-50 hover:bg-slate-100"}
                         ${copyBuffer ? "hover:bg-emerald-50" : ""}
                         ${copyBuffer && hoveredDateKey === keyForDate ? "bg-emerald-50" : ""}
                         ${i % 7 === 6 ? "border-r-0" : ""}`}
                     >
-                      <div className={`mb-1 flex h-[22px] w-[22px] items-center justify-center rounded-full text-[12px] font-bold
-                        ${tod ? "bg-sky-500 text-white" : other ? "text-slate-300" : "text-slate-600"}`}>
-                        {date.getDate()}
+                      <div className={`mb-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full px-1.5 text-[12px] font-bold transition-colors duration-200
+                        ${tod ? "bg-sky-500 text-white" : isActiveMonth ? "text-slate-600" : "text-slate-300"}`}>
+                        {isFirstDay
+                          ? `${date.getMonth() + 1}월 1일`
+                          : date.getDate()}
                       </div>
 
                       {placeholders.slice(0, MONTH_VISIBLE_ITEMS).map((placeholder) => (
@@ -690,9 +744,9 @@ export function MonthView({
                   );
                 })}
               </div>
-            </section>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
       <SessionDragPreview
         preview={dragPreview}

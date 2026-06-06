@@ -54,7 +54,7 @@ export function Sidebar() {
         cache: "no-store",
       });
     } finally {
-      await signOut({ callbackUrl: "/login" });
+      await signOut({ callbackUrl: "/" });
     }
   }
 
