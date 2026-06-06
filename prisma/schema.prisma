@@ -23,7 +23,7 @@ model Student {
   totalSessions    Int    @default(0)
   hwCompletionRate Int    @default(0)
   instructorId     String?
-  instructor       User?  @relation("InstructorStudents", fields: [instructorId], references: [id])
+  instructor       User?  @relation("InstructorStudents", fields: [instructorId], references: [id], onDelete: Cascade)
   sessions         LessonSession[]
   reports          Report[]
   parentLinks      StudentParent[]
