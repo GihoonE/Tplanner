@@ -11,7 +11,6 @@
 | 분류 | 기술 |
 |------|------|
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
-| State | Zustand, TanStack Query |
 | Backend | Prisma, PostgreSQL (Neon), NextAuth.js |
 | Deploy | Vercel |
 
