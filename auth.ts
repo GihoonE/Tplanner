@@ -10,7 +10,7 @@ const ONE_HOUR_IN_SECONDS = 60 * 60;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  trustHost: true,
+  trustHost: process.env.NODE_ENV !== "production",
   session: {
     strategy: "jwt",
     maxAge: THREE_DAYS_IN_SECONDS,
@@ -23,16 +23,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   providers: [
-    Google({
-      allowDangerousEmailAccountLinking: true,
-    }),
+    Google({}),
     Kakao({
-      allowDangerousEmailAccountLinking: true,
       clientId: process.env.AUTH_KAKAO_ID ?? process.env.KAKAO_API_KEY ?? "",
       clientSecret: process.env.AUTH_KAKAO_SECRET ?? "",
       authorization: {
         url: "https://kauth.kakao.com/oauth/authorize",
-        params: { scope: "profile_nickname profile_image" },
+        params: { scope: "profile_nickname profile_image account_email" },
       },
     }),
   ],
@@ -44,6 +41,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         | {
             kakao_account?: {
               email?: string;
+              is_email_valid?: boolean;
+              is_email_verified?: boolean;
               profile?: {
                 nickname?: string;
                 profile_image_url?: string;
@@ -62,7 +61,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         user.name ??
         kakaoProfile?.kakao_account?.profile?.nickname ??
         kakaoProfile?.properties?.nickname;
-      const nextEmail = user.email ?? kakaoProfile?.kakao_account?.email;
+      const kakaoEmail =
+        kakaoProfile?.kakao_account?.is_email_verified &&
+        kakaoProfile?.kakao_account?.is_email_valid
+          ? kakaoProfile.kakao_account.email
+          : undefined;
+      const nextEmail = user.email ?? kakaoEmail;
       const nextImage =
         user.image ??
         kakaoProfile?.kakao_account?.profile?.profile_image_url ??
@@ -92,19 +96,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async jwt({ token, user, trigger, session }) {
+      // On first sign-in: fetch the role from DB and embed it in the token.
+      // This is the ONLY time we hit the DB here — subsequent requests read
+      // the role straight from the stored JWT, saving one DB round-trip per request.
       if (user) {
-        token.role = user.role;
-      }
-      if (trigger === "update" && session?.role) {
-        token.role = session.role;
-      }
-      if (token.sub) {
         const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
+          where: { id: user.id },
           select: { role: true },
         });
         token.role = isUserRole(dbUser?.role) ? dbUser.role : null;
+        return token;
       }
+
+      // When the session is explicitly updated (e.g. after role assignment)
+      // sync the new role into the token so it takes effect immediately.
+      if (trigger === "update" && session?.role) {
+        token.role = session.role;
+      }
+
       return token;
     },
     session({ session, token }) {

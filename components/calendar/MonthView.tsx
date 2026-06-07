@@ -20,7 +20,7 @@ import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO } from "@/lib/constants";
 import { resolveAvatarBg } from "@/lib/studentColor";
 
-const MONTH_WINDOW = 6;
+const MONTH_WINDOW = 2; // 5 months total: 2 prev / current / 2 next
 const MONTH_VISIBLE_ITEMS = 3;
 
 function monthStart(d: Date): Date {
@@ -103,7 +103,7 @@ export function MonthView({
     grabY: 0,
   });
   const firstDayRefs = useRef(new Map<string, { date: Date; node: HTMLElement }>());
-  const activeMonthFrameRef = useRef<number | null>(null);
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const suppressSessionClickRef = useRef(false);
   const [dragPreview, setDragPreview] =
     useState<SessionDragPreviewState | null>(null);
@@ -113,6 +113,17 @@ export function MonthView({
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
   const [dragPlaceholders, setDragPlaceholders] = useState<MonthDragPlaceholder[]>([]);
   const [weekRowHeight, setWeekRowHeight] = useState(0);
+
+  // Mutable ref so the stable keydown effect reads current closures each time.
+  const keyActionsRef = useRef({
+    selectedSessionIds,
+    copyBuffer,
+    hoveredDateKey,
+    copy: () => {},
+    paste: async (_key: string) => {},
+    delete: async () => {},
+    clear: () => {},
+  });
 
   const primaryOffset = getPrimaryOffset(tzData);
   const primaryNow = wallClockDateInTimeZone(now, tzData[0]?.timeZone ?? "Asia/Seoul");
@@ -167,6 +178,10 @@ export function MonthView({
   const studentsById = useMemo(
     () => new Map(students.map((student) => [student.id, student])),
     [students],
+  );
+  const sessionsById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
   );
   const sessionActions = useMemo(
     () => ({
@@ -249,39 +264,48 @@ export function MonthView({
     return () => observer.disconnect();
   }, []);
 
-  const updateActiveMonthFromScroll = useCallback(() => {
+  // Replace scroll-listener iteration with IntersectionObserver.
+  // The observer fires only when first-day-of-month cells enter/leave the viewport,
+  // instead of recalculating on every scroll frame.
+  useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-    const containerRect = container.getBoundingClientRect();
-    const threshold = containerRect.top + container.clientHeight / 2;
-    let nextMonth = months[0] ?? monthStart(curMonth);
-    let closestTop = Number.NEGATIVE_INFINITY;
 
-    firstDayRefs.current.forEach(({ date, node }) => {
-      const top = node.getBoundingClientRect().top;
-      if (top <= threshold && top > closestTop) {
-        closestTop = top;
-        nextMonth = monthStart(date);
-      }
-    });
+    const observer = new IntersectionObserver(
+      () => {
+        // Find the topmost first-day cell that is still within the top 40% of the container.
+        const containerRect = container.getBoundingClientRect();
+        const threshold = containerRect.top + container.clientHeight * 0.4;
+        let bestDate: Date | null = null;
+        let bestTop = Number.NEGATIVE_INFINITY;
 
-    if (
-      monthKey(nextMonth) !==
-      monthKey(useTutorStore.getState().calendarActiveMonth)
-    ) {
-      setCalendarActiveMonth(nextMonth);
-    }
-  }, [curMonth, months, setCalendarActiveMonth]);
+        firstDayRefs.current.forEach(({ date, node }) => {
+          const top = node.getBoundingClientRect().top;
+          if (top <= threshold && top > bestTop) {
+            bestTop = top;
+            bestDate = date;
+          }
+        });
 
-  useEffect(() => {
-    updateActiveMonthFromScroll();
+        if (bestDate) {
+          const next = monthStart(bestDate);
+          if (monthKey(next) !== monthKey(useTutorStore.getState().calendarActiveMonth)) {
+            setCalendarActiveMonth(next);
+          }
+        }
+      },
+      { root: container, threshold: 0 },
+    );
+
+    intersectionObserverRef.current = observer;
+    // Observe any already-mounted first-day cells.
+    firstDayRefs.current.forEach(({ node }) => observer.observe(node));
+
     return () => {
-      if (activeMonthFrameRef.current !== null) {
-        window.cancelAnimationFrame(activeMonthFrameRef.current);
-        activeMonthFrameRef.current = null;
-      }
+      observer.disconnect();
+      intersectionObserverRef.current = null;
     };
-  }, [updateActiveMonthFromScroll]);
+  }, [weekRows, setCalendarActiveMonth]);
 
   useEffect(() => {
     if (selectedSessionIds.length > 1) {
@@ -291,7 +315,7 @@ export function MonthView({
 
   function sortedSelectedSessions(ids = selectedSessionIds) {
     return ids
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessionsById.get(id))
       .filter((session): session is (typeof sessions)[number] => Boolean(session))
       .sort((a, b) => a.start.getTime() - b.start.getTime());
   }
@@ -377,14 +401,6 @@ export function MonthView({
     setCalView("day");
   }
 
-  function handleScroll() {
-    if (activeMonthFrameRef.current !== null) return;
-    activeMonthFrameRef.current = window.requestAnimationFrame(() => {
-      activeMonthFrameRef.current = null;
-      updateActiveMonthFromScroll();
-    });
-  }
-
   function monthDateFromPoint(x: number, y: number): string | null {
     const dropTarget = document
       .elementFromPoint(x, y)
@@ -437,37 +453,50 @@ export function MonthView({
     setCopyBuffer(selected);
   }
 
+  // Keep ref in sync so the stable keydown effect always reads the latest values.
+  keyActionsRef.current = {
+    selectedSessionIds,
+    copyBuffer,
+    hoveredDateKey,
+    copy: copySelectedSessions,
+    paste: pasteCopiedSessions,
+    delete: deleteSelectedSessions,
+    clear: clearSelectionAndBuffer,
+  };
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
 
+      const { selectedSessionIds, copyBuffer, hoveredDateKey } = keyActionsRef.current;
       const key = e.key.toLowerCase();
+
       if (key === "c") {
         if (selectedSessionIds.length < 1) return;
         e.preventDefault();
-        copySelectedSessions();
+        keyActionsRef.current.copy();
         return;
       }
 
       if (key === "v") {
         if (!copyBuffer || !hoveredDateKey) return;
         e.preventDefault();
-        void pasteCopiedSessions(hoveredDateKey);
+        void keyActionsRef.current.paste(hoveredDateKey);
         return;
       }
 
       if (key === "backspace") {
         if (selectedSessionIds.length === 0) return;
         e.preventDefault();
-        void deleteSelectedSessions();
+        void keyActionsRef.current.delete();
       }
     }
 
     function onPlainKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (e.key !== "Escape") return;
-      clearSelectionAndBuffer();
+      keyActionsRef.current.clear();
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -476,7 +505,7 @@ export function MonthView({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keydown", onPlainKeyDown);
     };
-  });
+  }, []); // safe: reads latest values via keyActionsRef on every call
 
   const handleSessionMouseDown = useCallback(
     (
@@ -619,7 +648,6 @@ export function MonthView({
       {/* Grid */}
       <div
         ref={scrollRef}
-        onScroll={handleScroll}
         className="flex-1 overflow-y-auto bg-white"
         style={{ scrollbarWidth: "thin" }}
       >
@@ -660,11 +688,11 @@ export function MonthView({
                       ref={(node) => {
                         if (!isFirstDay) return;
                         if (node) {
-                          firstDayRefs.current.set(keyForDate, {
-                            date,
-                            node,
-                          });
+                          firstDayRefs.current.set(keyForDate, { date, node });
+                          intersectionObserverRef.current?.observe(node);
                         } else {
+                          const existing = firstDayRefs.current.get(keyForDate);
+                          if (existing) intersectionObserverRef.current?.unobserve(existing.node);
                           firstDayRefs.current.delete(keyForDate);
                         }
                       }}

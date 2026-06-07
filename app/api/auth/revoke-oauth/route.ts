@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireSignedIn } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
+import { ok, err } from "@/lib/api/response";
 
 type RevocationResult = {
   provider: string;
@@ -61,15 +61,9 @@ async function revokeAccount(account: {
 }
 
 export async function POST() {
-  const session = await auth();
-  const userId = session?.user?.id;
-
-  if (!userId) {
-    return NextResponse.json(
-      { error: "로그인이 필요합니다." },
-      { status: 401 },
-    );
-  }
+  const auth = await requireSignedIn();
+  if (auth.response) return auth.response;
+  const { userId } = auth;
 
   const accounts = await prisma.account.findMany({
     where: { userId },
@@ -81,6 +75,5 @@ export async function POST() {
   });
 
   const results = await Promise.all(accounts.map(revokeAccount));
-
-  return NextResponse.json({ results });
+  return ok({ results });
 }

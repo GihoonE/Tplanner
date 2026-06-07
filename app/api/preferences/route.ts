@@ -1,14 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { TZ_CATALOG } from "@/lib/constants";
-import { auth } from "@/auth";
+import { requireSignedIn } from "@/lib/auth/permissions";
+import type { ExtraTimezonePreference } from "@/types";
+import { ok, err } from "@/lib/api/response";
 
 const DEFAULT_TIMEZONE = "Asia/Seoul";
-
-type ExtraTimezonePreference = {
-  timeZone: string;
-  on: boolean;
-};
 
 const DEFAULT_EXTRA_TIMEZONES: ExtraTimezonePreference[] = [];
 
@@ -69,76 +66,54 @@ function serializePreference(preference: {
 
 export async function GET() {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 },
-      );
+    const auth = await requireSignedIn();
+    if (auth.response) return auth.response;
+    const { userId } = auth;
+
+    // Use findUnique + create fallback — a GET must not write unless necessary.
+    let preference = await prisma.userPreference.findUnique({ where: { userId } });
+    if (!preference) {
+      preference = await prisma.userPreference.create({
+        data: {
+          userId,
+          primaryTimezone: DEFAULT_TIMEZONE,
+          extraTimezones: DEFAULT_EXTRA_TIMEZONES,
+        },
+      });
     }
 
-    const preference = await prisma.userPreference.upsert({
-      where: { userId },
-      update: {},
-      create: {
-        userId,
-        primaryTimezone: DEFAULT_TIMEZONE,
-        extraTimezones: DEFAULT_EXTRA_TIMEZONES,
-      },
+    return ok(serializePreference(preference), 200, {
+      "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
     });
-
-    return NextResponse.json(serializePreference(preference));
   } catch (e) {
     console.error("[GET /api/preferences]", e);
-    return NextResponse.json(
-      { error: "환경설정을 불러오는 데 실패했습니다." },
-      { status: 500 },
-    );
+    return err("환경설정을 불러오는 데 실패했습니다.", 500);
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 },
-      );
-    }
+    const auth = await requireSignedIn();
+    if (auth.response) return auth.response;
+    const { userId } = auth;
 
+    const body = await request.json();
     const { primaryTimezone } = body;
 
     if (!isSupportedTimezone(primaryTimezone)) {
-      return NextResponse.json(
-        { error: "지원하지 않는 타임존입니다." },
-        { status: 400 },
-      );
+      return err("지원하지 않는 타임존입니다.", 400);
     }
-    const extraTimezones = normalizeExtraTimezones(
-      body.extraTimezones,
-      primaryTimezone,
-    );
+    const extraTimezones = normalizeExtraTimezones(body.extraTimezones, primaryTimezone);
 
     const preference = await prisma.userPreference.upsert({
       where: { userId },
       update: { primaryTimezone, extraTimezones },
-      create: {
-        userId,
-        primaryTimezone,
-        extraTimezones,
-      },
+      create: { userId, primaryTimezone, extraTimezones },
     });
 
-    return NextResponse.json(serializePreference(preference));
+    return ok(serializePreference(preference));
   } catch (e) {
     console.error("[PATCH /api/preferences]", e);
-    return NextResponse.json(
-      { error: "환경설정 저장에 실패했습니다." },
-      { status: 500 },
-    );
+    return err("환경설정 저장에 실패했습니다.", 500);
   }
 }

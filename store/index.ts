@@ -15,19 +15,14 @@ import type {
   CalendarView,
   SessionModalTab,
   SessionEditorAnchor,
+  ExtraTimezonePreference,
+  SessionSaveState,
 } from "@/types";
 import { TZ_CATALOG } from "@/lib/constants";
-
-type ExtraTimezonePreference = {
-  timeZone: string;
-  on?: boolean;
-};
 
 type SessionPatch = Partial<Omit<Session, "id" | "homework">> & {
   homework?: Session["homework"];
 };
-
-type SessionSaveState = "idle" | "saving" | "error" | "offline";
 
 // ── Initial timezone state ────────────────────────────────────────────────────
 const INITIAL_TZ: TzEntry[] = [
@@ -37,7 +32,7 @@ const INITIAL_TZ: TzEntry[] = [
 ];
 
 // ── Store shape ───────────────────────────────────────────────────────────────
-interface TutorStore {
+export interface TutorStore {
   // ── Data ──────────────────────────────────────────────────────────────────
   students: Student[];
   sessions: Session[];
@@ -129,6 +124,18 @@ function weekStart(d: Date): Date {
   x.setHours(0, 0, 0, 0);
   return x;
 }
+function monthStart(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function isIdle(
+  edits: Record<number, SessionPatch>,
+  deletes: number[],
+  creates: Session[],
+) {
+  return (
+    Object.keys(edits).length === 0 && deletes.length === 0 && creates.length === 0
+  );
+}
 
 function buildTzData(
   primaryTimezone: string,
@@ -196,8 +203,11 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
 
   calView: "week",
   curWeekStart: weekStart(NOW),
-  curMonth: new Date(NOW.getFullYear(), NOW.getMonth(), 1),
-  calendarActiveMonth: new Date(NOW.getFullYear(), NOW.getMonth(), 1),
+  // curMonth = navigation anchor (set by navigation actions).
+  // calendarActiveMonth = scroll-driven display month (updated by MonthView scroll handler).
+  // Both start at the same value; they may diverge temporarily during scroll.
+  curMonth: monthStart(NOW),
+  calendarActiveMonth: monthStart(NOW),
   curDay: new Date(NOW),
   now: NOW,
 
@@ -222,12 +232,7 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       modalAnchor: state.modalSessionId === id ? null : state.modalAnchor,
     })),
 
-  addSession: (s) =>
-    set((state) => ({
-      sessions: state.sessions.some((session) => session.id === s.id)
-        ? state.sessions.map((session) => (session.id === s.id ? s : session))
-        : [...state.sessions, s],
-    })),
+  addSession: (s) => get().upsertSession(s),
 
   setStudents: (students) => set({ students }),
 
@@ -312,33 +317,27 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
       const idSet = new Set(ids);
       const pendingSessionEdits = { ...state.pendingSessionEdits };
       ids.forEach((id) => delete pendingSessionEdits[id]);
+      const remainingDeletes = state.pendingSessionDeletes.filter((id) => !idSet.has(id));
       return {
         pendingSessionEdits,
-        pendingSessionDeletes: state.pendingSessionDeletes.filter(
-          (id) => !idSet.has(id),
-        ),
-        sessionSaveState:
-          Object.keys(pendingSessionEdits).length === 0 &&
-          state.pendingSessionDeletes.every((id) => idSet.has(id)) &&
-          state.pendingSessionCreates.length === 0
-            ? "idle"
-            : state.sessionSaveState,
+        pendingSessionDeletes: remainingDeletes,
+        sessionSaveState: isIdle(pendingSessionEdits, remainingDeletes, state.pendingSessionCreates)
+          ? "idle"
+          : state.sessionSaveState,
       };
     }),
 
   clearSessionPendingCreate: (ids) =>
     set((state) => {
       const idSet = new Set(ids);
+      const remainingCreates = state.pendingSessionCreates.filter(
+        (session) => !idSet.has(session.id),
+      );
       return {
-        pendingSessionCreates: state.pendingSessionCreates.filter(
-          (session) => !idSet.has(session.id),
-        ),
-        sessionSaveState:
-          Object.keys(state.pendingSessionEdits).length === 0 &&
-          state.pendingSessionDeletes.length === 0 &&
-          state.pendingSessionCreates.every((session) => idSet.has(session.id))
-            ? "idle"
-            : state.sessionSaveState,
+        pendingSessionCreates: remainingCreates,
+        sessionSaveState: isIdle(state.pendingSessionEdits, state.pendingSessionDeletes, remainingCreates)
+          ? "idle"
+          : state.sessionSaveState,
       };
     }),
 
@@ -348,51 +347,35 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   // ── Calendar actions ───────────────────────────────────────────────────────
   setCalView: (v) =>
     set((state) => {
-      if (v === "week") {
-        return {
-          calView: v,
-          curWeekStart: weekStart(state.curDay),
-          curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
-          calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
-        };
-      }
-      if (v === "month") {
-        return {
-          calView: v,
-          curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
-          calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
-          curWeekStart: weekStart(state.curDay),
-        };
-      }
+      const m = monthStart(state.curDay);
       return {
         calView: v,
         curWeekStart: weekStart(state.curDay),
-        curMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
-        calendarActiveMonth: new Date(state.curDay.getFullYear(), state.curDay.getMonth(), 1),
+        curMonth: m,
+        calendarActiveMonth: m,
       };
     }),
 
   navigateWeek: (dir) =>
     set((state) => {
       const curWeekStart = addDays(state.curWeekStart, dir * 7);
+      const m = monthStart(curWeekStart);
       return {
         curWeekStart,
         curDay: new Date(curWeekStart),
-        curMonth: new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), 1),
-        calendarActiveMonth: new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), 1),
+        curMonth: m,
+        calendarActiveMonth: m,
       };
     }),
 
   navigateMonth: (dir) =>
     set((state) => {
-      const curMonth = new Date(
-        state.curMonth.getFullYear(),
-        state.curMonth.getMonth() + dir,
-        1,
+      const curMonth = monthStart(
+        new Date(state.curMonth.getFullYear(), state.curMonth.getMonth() + dir, 1),
       );
       return {
         curMonth,
-        calendarActiveMonth: new Date(curMonth),
+        calendarActiveMonth: curMonth,
         curDay: new Date(curMonth),
         curWeekStart: weekStart(curMonth),
       };
@@ -401,36 +384,40 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   navigateDay: (dir) =>
     set((state) => {
       const curDay = addDays(state.curDay, dir);
+      const m = monthStart(curDay);
       return {
         curDay,
         curWeekStart: weekStart(curDay),
-        curMonth: new Date(curDay.getFullYear(), curDay.getMonth(), 1),
-        calendarActiveMonth: new Date(curDay.getFullYear(), curDay.getMonth(), 1),
+        curMonth: m,
+        calendarActiveMonth: m,
       };
     }),
 
   goToday: () =>
-    set((state) => ({
-      curWeekStart: weekStart(state.now),
-      curMonth: new Date(state.now.getFullYear(), state.now.getMonth(), 1),
-      calendarActiveMonth: new Date(state.now.getFullYear(), state.now.getMonth(), 1),
-      curDay: new Date(state.now),
-    })),
+    set((state) => {
+      const m = monthStart(state.now);
+      return {
+        curWeekStart: weekStart(state.now),
+        curMonth: m,
+        calendarActiveMonth: m,
+        curDay: new Date(state.now),
+      };
+    }),
 
-  jumpToDate: (d) =>
+  jumpToDate: (d) => {
+    const m = monthStart(d);
     set({
       curWeekStart: weekStart(d),
       curDay: new Date(d),
-      curMonth: new Date(d.getFullYear(), d.getMonth(), 1),
-      calendarActiveMonth: new Date(d.getFullYear(), d.getMonth(), 1),
-    }),
+      curMonth: m,
+      calendarActiveMonth: m,
+    });
+  },
 
   setNow: (d) => set({ now: new Date(d) }),
 
   setCalendarActiveMonth: (d) =>
-    set({
-      calendarActiveMonth: new Date(d.getFullYear(), d.getMonth(), 1),
-    }),
+    set({ calendarActiveMonth: monthStart(d) }),
 
   // ── Modal actions ──────────────────────────────────────────────────────────
   openModal: (sessionId, tab = "detail", anchor = null) =>
@@ -450,24 +437,15 @@ export const useTutorStore = create<TutorStore>((set, get) => ({
   setPrimaryTz: (id) => {
     const cat = TZ_CATALOG.find((c) => c.id === id);
     if (!cat) return;
-    set((state) => ({
-      tzData: buildTzData(
-        cat.timeZone,
-        extrasFromTzData(state.tzData).filter(
-          (extra) => extra.timeZone !== cat.timeZone,
-        ),
-      ),
-    }));
+    get().setPrimaryTimezone(cat.timeZone);
   },
 
   setPrimaryTimezone: (timeZone) => {
-    const cat = TZ_CATALOG.find((c) => c.timeZone === timeZone);
-    if (!cat) return;
     set((state) => ({
       tzData: buildTzData(
-        cat.timeZone,
+        timeZone,
         extrasFromTzData(state.tzData).filter(
-          (extra) => extra.timeZone !== cat.timeZone,
+          (extra) => extra.timeZone !== timeZone,
         ),
       ),
     }));

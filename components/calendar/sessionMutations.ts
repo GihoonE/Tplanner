@@ -10,24 +10,22 @@ import {
   removeSessionCaches,
   replaceTempSessionCaches,
 } from "@/lib/sessionCache";
-import { useTutorStore } from "@/store";
+import { useTutorStore, type TutorStore } from "@/store";
 import type { Session } from "@/types";
 
-type StoreSessionActions = {
-  addSession: (session: Session) => void;
-  upsertSession: (session: Session) => void;
-  deleteSession: (id: number) => void;
-  markSessionPendingUpdate: (
-    id: number,
-    patch: Partial<Omit<Session, "id">>,
-  ) => void;
-  markSessionPendingCreate: (session: Session) => void;
-  markSessionPendingDelete: (id: number) => void;
-  replaceSessionTempId: (tempId: number, session: Session) => void;
-  clearSessionPending: (ids: number[]) => void;
-  clearSessionPendingCreate: (ids: number[]) => void;
-  setSessionSaveState: (state: "idle" | "saving" | "error" | "offline", error?: string | null) => void;
-};
+type StoreSessionActions = Pick<
+  TutorStore,
+  | "addSession"
+  | "upsertSession"
+  | "deleteSession"
+  | "markSessionPendingUpdate"
+  | "markSessionPendingCreate"
+  | "markSessionPendingDelete"
+  | "replaceSessionTempId"
+  | "clearSessionPending"
+  | "clearSessionPendingCreate"
+  | "setSessionSaveState"
+>;
 
 type BatchResult = {
   sessionId?: number;
@@ -165,6 +163,11 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
 
   state.setSessionSaveState("saving");
 
+  // Snapshot current sessions BEFORE any mutations so we can roll back failures.
+  const snapshotById = new Map(
+    state.sessions.map((session) => [session.id, session]),
+  );
+
   const deleted = new Set(pendingDeleteIds);
   const sessionsById = new Map(state.sessions.map((session) => [session.id, session]));
   const createdSessions = pendingCreateIds
@@ -173,6 +176,7 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
     .filter((session): session is Session => Boolean(session));
 
   try {
+    // ── Phase 1: creates (must finish before updates reference their IDs) ──────
     if (createdSessions.length > 0) {
       const response = await apiJson<BatchResponse>("/api/sessions/batch", {
         method: "POST",
@@ -208,6 +212,7 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
       state.clearSessionPending(pendingCreateIds);
     }
 
+    // ── Phase 2: updates + deletes in parallel (no ordering dependency) ───────
     const latest = useTutorStore.getState();
     const latestSessionsById = new Map(
       latest.sessions.map((session) => [session.id, session]),
@@ -218,54 +223,80 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
       .map((id) => latestSessionsById.get(id))
       .filter((session): session is Session => Boolean(session));
 
-    if (updateSessions.length > 0) {
-      const response = await apiJson<BatchResponse>("/api/sessions/batch", {
-        method: "PATCH",
-        body: JSON.stringify({
-          sessions: updateSessions.map((session) => ({
-            id: session.id,
-            start: session.start.toISOString(),
-            end: session.end.toISOString(),
-            place: session.place,
-            notes: session.notes,
-            understanding: session.understanding,
-            focus: session.focus,
-          })),
-        }),
-      });
+    const deleteIds = latest.pendingSessionDeletes.filter((id) => id > 0);
+
+    const [updateResponse, deleteResponse] = await Promise.all([
+      updateSessions.length > 0
+        ? apiJson<BatchResponse>("/api/sessions/batch", {
+            method: "PATCH",
+            body: JSON.stringify({
+              sessions: updateSessions.map((session) => ({
+                id: session.id,
+                start: session.start.toISOString(),
+                end: session.end.toISOString(),
+                place: session.place,
+                notes: session.notes,
+                understanding: session.understanding,
+                focus: session.focus,
+              })),
+            }),
+          })
+        : Promise.resolve(null),
+      deleteIds.length > 0
+        ? apiJson<BatchResponse>("/api/sessions/batch", {
+            method: "DELETE",
+            body: JSON.stringify({ ids: deleteIds }),
+          })
+        : Promise.resolve(null),
+    ]);
+
+    // ── Handle update results ─────────────────────────────────────────────────
+    if (updateResponse) {
       const successfulIds: number[] = [];
       const serverSessions: Session[] = [];
-      response.results.forEach((result) => {
+      const failedIds: number[] = [];
+
+      updateResponse.results.forEach((result) => {
         if (result.success && result.session && result.sessionId !== undefined) {
           successfulIds.push(result.sessionId);
           serverSessions.push(apiSessionToSession(result.session));
+        } else if (result.sessionId !== undefined) {
+          failedIds.push(result.sessionId);
         }
       });
+
       serverSessions.forEach(latest.upsertSession);
       patchSessionCaches(queryClient, serverSessions);
       latest.clearSessionPending(successfulIds);
-      if (successfulIds.length !== updateSessions.length) {
+
+      // Roll back only the sessions whose updates failed.
+      failedIds.forEach((id) => {
+        const original = snapshotById.get(id);
+        if (original) latest.upsertSession(original);
+      });
+      if (failedIds.length > 0) {
+        patchSessionCaches(queryClient, failedIds.map((id) => snapshotById.get(id)).filter(Boolean) as Session[]);
         throw new Error("일부 수업 저장에 실패했습니다.");
       }
     }
 
-    const deleteIds = useTutorStore
-      .getState()
-      .pendingSessionDeletes.filter((id) => id > 0);
-    if (deleteIds.length > 0) {
-      const response = await apiJson<BatchResponse>("/api/sessions/batch", {
-        method: "DELETE",
-        body: JSON.stringify({ ids: deleteIds }),
-      });
-      const successfulIds = response.results
+    // ── Handle delete results ─────────────────────────────────────────────────
+    if (deleteResponse) {
+      const successfulIds = deleteResponse.results
         .filter((result) => result.success && result.sessionId !== undefined)
         .map((result) => result.sessionId as number);
+      const failedDeleteIds = deleteIds.filter((id) => !successfulIds.includes(id));
+
       useTutorStore.getState().clearSessionPending(successfulIds);
-      if (successfulIds.length !== deleteIds.length) {
+
+      // On delete failure: refetch from server to restore the sessions in the UI.
+      if (failedDeleteIds.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
         throw new Error("일부 수업 삭제에 실패했습니다.");
       }
     }
 
+    // Clean up any temp-id deletes that never hit the server.
     const tempDeleteIds = useTutorStore
       .getState()
       .pendingSessionDeletes.filter((id) => id < 0);

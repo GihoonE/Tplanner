@@ -13,6 +13,7 @@ import {
   parseUnderstanding,
 } from "@/lib/api/validation";
 import { prisma } from "@/lib/db";
+import { serializeSession } from "@/lib/api/serializers";
 
 type BatchResult<T = unknown> = {
   sessionId?: number;
@@ -21,36 +22,6 @@ type BatchResult<T = unknown> = {
   error?: string;
   session?: T;
 };
-
-function serializeSession(s: {
-  id: number;
-  studentId: number | null;
-  start: Date;
-  end: Date;
-  place: string;
-  notes: string;
-  understanding: string;
-  focus: string;
-  version: number;
-  homework: { id: number; text: string; done: boolean }[];
-}) {
-  return {
-    id: s.id,
-    studentId: s.studentId,
-    start: s.start.toISOString(),
-    end: s.end.toISOString(),
-    place: s.place,
-    notes: s.notes,
-    understanding: s.understanding,
-    focus: s.focus,
-    version: s.version,
-    homework: s.homework.map((h) => ({
-      id: h.id,
-      text: h.text,
-      done: h.done,
-    })),
-  };
-}
 
 async function loadSession(id: number, instructorId: string) {
   return prisma.lessonSession.findFirst({
@@ -67,6 +38,12 @@ export async function POST(request: NextRequest) {
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
+    // Clean up idempotency records older than 24 hours (fire-and-forget).
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    prisma.sessionBatchCreateRequest
+      .deleteMany({ where: { createdAt: { lt: yesterday } } })
+      .catch(() => {});
+
     const body = await request.json();
     const idempotencyKey =
       typeof body?.idempotencyKey === "string"
@@ -80,15 +57,27 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (idempotencyKey.length > 128 || !/^[\w-]+$/.test(idempotencyKey)) {
+      return NextResponse.json(
+        { error: "idempotencyKey 형식이 올바르지 않습니다. (최대 128자, 영문/숫자/-/_)" },
+        { status: 400 },
+      );
+    }
     if (items.length === 0) {
       return NextResponse.json(
         { error: "생성할 수업이 없습니다." },
         { status: 400 },
       );
     }
+    if (items.length > 100) {
+      return NextResponse.json(
+        { error: "한 번에 최대 100개까지 처리할 수 있습니다." },
+        { status: 400 },
+      );
+    }
 
     const cached = await prisma.sessionBatchCreateRequest.findUnique({
-      where: { key: idempotencyKey },
+      where: { key: idempotencyKey, userId: instructor.userId },
     });
     if (cached) {
       return NextResponse.json(cached.response);
@@ -194,28 +183,34 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const items = Array.isArray(body?.sessions) ? body.sessions : [];
-    const results: BatchResult<ReturnType<typeof serializeSession>>[] = [];
+
+    if (items.length === 0) {
+      return NextResponse.json({ results: [] });
+    }
+    if (items.length > 100) {
+      return NextResponse.json(
+        { error: "한 번에 최대 100개까지 처리할 수 있습니다." },
+        { status: 400 },
+      );
+    }
+
+    // ── Step 1: validate inputs, build update data per item ───────────────────
+    type ValidatedItem = {
+      id: number;
+      data: Record<string, unknown>;
+    };
+
+    const validItems: ValidatedItem[] = [];
+    const earlyErrors: BatchResult<ReturnType<typeof serializeSession>>[] = [];
 
     for (const item of items) {
       const idParam = parsePositiveInt(String(item?.id ?? ""), "id");
       if (!idParam.ok) {
-        results.push({ success: false, error: idParam.error });
+        earlyErrors.push({ success: false, error: idParam.error });
         continue;
       }
 
       try {
-        const existing = await prisma.lessonSession.findFirst({
-          where: {
-            id: idParam.value,
-            student: sessionStudentAccessWhere({
-              userId: instructor.userId,
-              role: "instructor",
-            }),
-          },
-          select: { id: true, start: true, end: true },
-        });
-        if (!existing) throw new Error("수업을 찾을 수 없습니다.");
-
         const placeParam = parseOptionalString(item?.place, "place");
         if (!placeParam.ok) throw new Error(placeParam.error);
         const notesParam = parseOptionalString(item?.notes, "notes");
@@ -229,35 +224,20 @@ export async function PATCH(request: NextRequest) {
         const endParam = parseOptionalDate(item?.end, "end");
         if (!endParam.ok) throw new Error(endParam.error);
 
-        const nextStart = startParam.value ?? existing.start;
-        const nextEnd = endParam.value ?? existing.end;
-        if (nextEnd <= nextStart) {
-          throw new Error("종료 시각(end)은 시작 시각(start)보다 이후여야 합니다.");
-        }
-
-        await prisma.lessonSession.update({
-          where: { id: idParam.value },
+        validItems.push({
+          id: idParam.value,
           data: {
             ...(placeParam.value !== undefined && { place: placeParam.value }),
             ...(notesParam.value !== undefined && { notes: notesParam.value }),
-            ...(understandingParam.value !== undefined && {
-              understanding: understandingParam.value,
-            }),
+            ...(understandingParam.value !== undefined && { understanding: understandingParam.value }),
             ...(focusParam.value !== undefined && { focus: focusParam.value }),
             ...(startParam.value !== undefined && { start: startParam.value }),
             ...(endParam.value !== undefined && { end: endParam.value }),
             version: { increment: 1 },
           },
         });
-        const updated = await loadSession(idParam.value, instructor.userId);
-        if (!updated) throw new Error("수업을 찾을 수 없습니다.");
-        results.push({
-          sessionId: updated.id,
-          success: true,
-          session: serializeSession(updated),
-        });
       } catch (error) {
-        results.push({
+        earlyErrors.push({
           sessionId: idParam.value,
           success: false,
           error: error instanceof Error ? error.message : "수업 수정 실패",
@@ -265,7 +245,82 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ results });
+    if (validItems.length === 0) {
+      return NextResponse.json({ results: earlyErrors });
+    }
+
+    // ── Step 2: batch ownership check ─────────────────────────────────────────
+    const validIds = validItems.map((item) => item.id);
+    const ownedSessions = await prisma.lessonSession.findMany({
+      where: {
+        id: { in: validIds },
+        student: { instructorId: instructor.userId },
+      },
+      select: { id: true, start: true, end: true },
+    });
+    const ownedIds = new Set(ownedSessions.map((s) => s.id));
+    const ownedMap = new Map(ownedSessions.map((s) => [s.id, s]));
+
+    const notOwnedErrors: BatchResult<ReturnType<typeof serializeSession>>[] =
+      validItems
+        .filter((item) => !ownedIds.has(item.id))
+        .map((item) => ({
+          sessionId: item.id,
+          success: false,
+          error: "수업을 찾을 수 없습니다.",
+        }));
+
+    const ownedItems = validItems.filter((item) => ownedIds.has(item.id));
+
+    // Validate start/end consistency against existing values
+    const timeErrors: BatchResult<ReturnType<typeof serializeSession>>[] = [];
+    const finalItems: ValidatedItem[] = [];
+    for (const item of ownedItems) {
+      const existing = ownedMap.get(item.id)!;
+      const nextStart = (item.data.start as Date | undefined) ?? existing.start;
+      const nextEnd   = (item.data.end   as Date | undefined) ?? existing.end;
+      if (nextEnd <= nextStart) {
+        timeErrors.push({
+          sessionId: item.id,
+          success: false,
+          error: "종료 시각(end)은 시작 시각(start)보다 이후여야 합니다.",
+        });
+      } else {
+        finalItems.push(item);
+      }
+    }
+
+    if (finalItems.length === 0) {
+      return NextResponse.json({
+        results: [...earlyErrors, ...notOwnedErrors, ...timeErrors],
+      });
+    }
+
+    // ── Step 3: batch update inside one transaction ────────────────────────────
+    await prisma.$transaction(
+      finalItems.map((item) =>
+        prisma.lessonSession.update({ where: { id: item.id }, data: item.data }),
+      ),
+    );
+
+    // ── Step 4: batch read updated sessions ────────────────────────────────────
+    const finalIds = finalItems.map((item) => item.id);
+    const updatedSessions = await prisma.lessonSession.findMany({
+      where: { id: { in: finalIds } },
+      include: { homework: true },
+    });
+    const updatedMap = new Map(updatedSessions.map((s) => [s.id, s]));
+
+    const successResults: BatchResult<ReturnType<typeof serializeSession>>[] =
+      finalItems.map((item) => {
+        const s = updatedMap.get(item.id);
+        if (!s) return { sessionId: item.id, success: false, error: "수업을 찾을 수 없습니다." };
+        return { sessionId: s.id, success: true, session: serializeSession(s) };
+      });
+
+    return NextResponse.json({
+      results: [...earlyErrors, ...notOwnedErrors, ...timeErrors, ...successResults],
+    });
   } catch (error) {
     console.error("[PATCH /api/sessions/batch]", error);
     return NextResponse.json(
@@ -281,37 +336,61 @@ export async function DELETE(request: NextRequest) {
     if (instructor.response) return instructor.response;
 
     const body = await request.json();
-    const ids = Array.isArray(body?.ids) ? body.ids : [];
-    const results: BatchResult[] = [];
+    const rawIds = Array.isArray(body?.ids) ? body.ids : [];
 
-    for (const rawId of ids) {
+    if (rawIds.length === 0) return NextResponse.json({ results: [] });
+    if (rawIds.length > 100) {
+      return NextResponse.json(
+        { error: "한 번에 최대 100개까지 처리할 수 있습니다." },
+        { status: 400 },
+      );
+    }
+
+    // ── Step 1: parse and validate IDs ────────────────────────────────────────
+    const validIds: number[] = [];
+    const parseErrors: BatchResult[] = [];
+    for (const rawId of rawIds) {
       const idParam = parsePositiveInt(String(rawId), "id");
       if (!idParam.ok) {
-        results.push({ success: false, error: idParam.error });
-        continue;
-      }
-
-      try {
-        const existing = await prisma.lessonSession.findFirst({
-          where: {
-            id: idParam.value,
-            student: { instructorId: instructor.userId },
-          },
-          select: { id: true },
-        });
-        if (!existing) throw new Error("수업을 찾을 수 없습니다.");
-        await prisma.lessonSession.delete({ where: { id: idParam.value } });
-        results.push({ sessionId: idParam.value, success: true });
-      } catch (error) {
-        results.push({
-          sessionId: idParam.value,
-          success: false,
-          error: error instanceof Error ? error.message : "수업 삭제 실패",
-        });
+        parseErrors.push({ success: false, error: idParam.error });
+      } else {
+        validIds.push(idParam.value);
       }
     }
 
-    return NextResponse.json({ results });
+    if (validIds.length === 0) {
+      return NextResponse.json({ results: parseErrors });
+    }
+
+    // ── Step 2: batch ownership check ─────────────────────────────────────────
+    const owned = await prisma.lessonSession.findMany({
+      where: {
+        id: { in: validIds },
+        student: { instructorId: instructor.userId },
+      },
+      select: { id: true },
+    });
+    const ownedIds = new Set(owned.map((s) => s.id));
+
+    const notOwnedErrors: BatchResult[] = validIds
+      .filter((id) => !ownedIds.has(id))
+      .map((id) => ({ sessionId: id, success: false, error: "수업을 찾을 수 없습니다." }));
+
+    const toDelete = Array.from(ownedIds);
+
+    // ── Step 3: batch delete ──────────────────────────────────────────────────
+    if (toDelete.length > 0) {
+      await prisma.lessonSession.deleteMany({ where: { id: { in: toDelete } } });
+    }
+
+    const successResults: BatchResult[] = toDelete.map((id) => ({
+      sessionId: id,
+      success: true,
+    }));
+
+    return NextResponse.json({
+      results: [...parseErrors, ...notOwnedErrors, ...successResults],
+    });
   } catch (error) {
     console.error("[DELETE /api/sessions/batch]", error);
     return NextResponse.json(

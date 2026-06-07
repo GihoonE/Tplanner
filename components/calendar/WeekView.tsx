@@ -26,7 +26,7 @@ import { getPrimaryOffset } from "@/lib/utils";
 import { DAYS_KO, HOUR_HEIGHT_PX } from "@/lib/constants";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const WEEK_WINDOW = 8;
+const WEEK_WINDOW = 1; // 3 weeks total: prev / current / next
 const MIN_DAY_WIDTH_PX = 112;
 const DAY_MINUTES = 24 * 60;
 
@@ -111,6 +111,10 @@ export function WeekView({
     () => new Map(students.map((student) => [student.id, student])),
     [students],
   );
+  const sessionsById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  );
   const sessionActions = useMemo(
     () => ({
       addSession,
@@ -178,6 +182,18 @@ export function WeekView({
     startMin: number;
   } | null>(null);
   const [dropPreviewBlocks, setDropPreviewBlocks] = useState<DropPreviewBlock[]>([]);
+
+  // Mutable ref holding the latest handler functions so the stable keydown
+  // effect ([] deps) can read current state without re-registering on every render.
+  const keyActionsRef = useRef({
+    selectedSessionIds,
+    copyBuffer,
+    hoverPasteTarget,
+    copy: () => {},
+    paste: async () => {},
+    delete: async () => {},
+    clear: () => {},
+  });
 
   useEffect(() => {
     if (!bodyRef.current) return;
@@ -299,7 +315,7 @@ export function WeekView({
 
   function sortedSelectedSessions(ids = selectedSessionIds) {
     return ids
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessionsById.get(id))
       .filter((session): session is (typeof sessions)[number] => Boolean(session))
       .sort((a, b) => a.start.getTime() - b.start.getTime());
   }
@@ -435,37 +451,50 @@ export function WeekView({
     [gridHeightPx, dayWidthPx, days, hourHeightPx],
   );
 
+  // Keep the ref in sync with the latest values on every render.
+  keyActionsRef.current = {
+    selectedSessionIds,
+    copyBuffer,
+    hoverPasteTarget,
+    copy: copySelectedSessions,
+    paste: pasteCopiedSessions,
+    delete: deleteSelectedSessions,
+    clear: clearSelectionAndBuffer,
+  };
+
+  // Register keyboard shortcuts once. The ref gives access to current state
+  // without needing to re-register listeners on every render.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
 
+      const { selectedSessionIds, copyBuffer, hoverPasteTarget } = keyActionsRef.current;
       const key = e.key.toLowerCase();
+
       if (key === "c") {
         if (selectedSessionIds.length < 1) return;
         e.preventDefault();
-        copySelectedSessions();
+        keyActionsRef.current.copy();
         return;
       }
-
       if (key === "v") {
         if (!copyBuffer || !hoverPasteTarget) return;
         e.preventDefault();
-        void pasteCopiedSessions();
+        void keyActionsRef.current.paste();
         return;
       }
-
       if (key === "backspace") {
         if (selectedSessionIds.length === 0) return;
         e.preventDefault();
-        void deleteSelectedSessions();
+        void keyActionsRef.current.delete();
       }
     }
 
     function onPlainKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (e.key !== "Escape") return;
-      clearSelectionAndBuffer();
+      keyActionsRef.current.clear();
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -474,7 +503,7 @@ export function WeekView({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keydown", onPlainKeyDown);
     };
-  });
+  }, []); // safe: reads latest values via keyActionsRef
 
   const handleSessionMouseDown = useCallback(
     (

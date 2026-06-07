@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { requireInstructor } from "@/lib/auth/permissions";
 import {
   generateInviteCode,
@@ -6,12 +6,8 @@ import {
   invitationExpiresAt,
 } from "@/lib/invitations";
 import { prisma } from "@/lib/db";
-
-function parseId(value: string) {
-  if (!/^\d+$/.test(value)) return null;
-  const id = Number(value);
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
-}
+import { parseRouteId } from "@/lib/api/validation";
+import { ok, err } from "@/lib/api/response";
 
 function serializeInvitation(invitation: {
   id: number;
@@ -41,40 +37,25 @@ export async function GET(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const studentId = parseId(params.id);
-    if (!studentId) {
-      return NextResponse.json(
-        { error: "유효한 학생 id가 아닙니다." },
-        { status: 400 },
-      );
-    }
+    const idParam = parseRouteId(params.id);
+    if (!idParam.ok) return err("유효한 학생 id가 아닙니다.", 400);
+    const studentId = idParam.value;
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, instructorId: instructor.userId },
       select: { id: true },
     });
-    if (!student) {
-      return NextResponse.json(
-        { error: "학생을 찾을 수 없습니다." },
-        { status: 404 },
-      );
-    }
+    if (!student) return err("학생을 찾을 수 없습니다.", 404);
 
     const invitations = await prisma.studentInvitation.findMany({
-      where: {
-        studentId,
-        instructorId: instructor.userId,
-      },
+      where: { studentId, instructorId: instructor.userId },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(invitations.map(serializeInvitation));
+    return ok(invitations.map(serializeInvitation));
   } catch (e) {
     console.error("[GET /api/students/[id]/invitations]", e);
-    return NextResponse.json(
-      { error: "초대 목록을 불러오는 데 실패했습니다." },
-      { status: 500 },
-    );
+    return err("초대 목록을 불러오는 데 실패했습니다.", 500);
   }
 }
 
@@ -86,24 +67,15 @@ export async function POST(
     const instructor = await requireInstructor();
     if (instructor.response) return instructor.response;
 
-    const studentId = parseId(params.id);
-    if (!studentId) {
-      return NextResponse.json(
-        { error: "유효한 학생 id가 아닙니다." },
-        { status: 400 },
-      );
-    }
+    const idParam = parseRouteId(params.id);
+    if (!idParam.ok) return err("유효한 학생 id가 아닙니다.", 400);
+    const studentId = idParam.value;
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, instructorId: instructor.userId },
       select: { id: true },
     });
-    if (!student) {
-      return NextResponse.json(
-        { error: "학생을 찾을 수 없습니다." },
-        { status: 404 },
-      );
-    }
+    if (!student) return err("학생을 찾을 수 없습니다.", 404);
 
     let code = generateInviteCode();
     let codeHash = hashInviteCode(code);
@@ -140,18 +112,9 @@ export async function POST(
       });
     });
 
-    return NextResponse.json(
-      {
-        ...serializeInvitation(invitation),
-        code,
-      },
-      { status: 201 },
-    );
+    return ok({ ...serializeInvitation(invitation), code }, 201);
   } catch (e) {
     console.error("[POST /api/students/[id]/invitations]", e);
-    return NextResponse.json(
-      { error: "초대 코드 생성에 실패했습니다." },
-      { status: 500 },
-    );
+    return err("초대 코드 생성에 실패했습니다.", 500);
   }
 }

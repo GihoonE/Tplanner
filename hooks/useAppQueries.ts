@@ -56,6 +56,7 @@ export function usePreferenceQuery() {
   return useQuery({
     queryKey: queryKeys.preferences,
     queryFn: () => apiGet<AppPreference>("/api/preferences"),
+    staleTime: 60_000,
   });
 }
 
@@ -63,16 +64,26 @@ export function useStudentsQuery(status: StudentListStatus = "active") {
   return useQuery({
     queryKey: queryKeys.studentsList(status),
     queryFn: () => apiGet<Student[]>(`/api/students?status=${status}`),
+    staleTime: 60_000,
   });
 }
 
-export function useSessionsQuery() {
+export function useSessionsQuery(opts?: { from?: Date; to?: Date; staleTime?: number }) {
+  const fromIso = opts?.from?.toISOString();
+  const toIso   = opts?.to?.toISOString();
   return useQuery({
-    queryKey: queryKeys.sessions,
+    // Include the date range in the key so ranged and unranged queries cache separately.
+    queryKey: fromIso && toIso
+      ? (["sessions", fromIso, toIso] as const)
+      : queryKeys.sessions,
     queryFn: async () => {
-      const rows = await apiGet<ApiSessionRow[]>("/api/sessions");
+      const url = fromIso && toIso
+        ? `/api/sessions?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`
+        : "/api/sessions";
+      const rows = await apiGet<ApiSessionRow[]>(url);
       return rows.map(apiSessionToSession);
     },
+    staleTime: opts?.staleTime ?? 60_000,
   });
 }
 
@@ -80,6 +91,7 @@ export function useReportsQuery() {
   return useQuery({
     queryKey: queryKeys.reports,
     queryFn: () => apiGet<Report[]>("/api/reports"),
+    staleTime: 60_000,
   });
 }
 

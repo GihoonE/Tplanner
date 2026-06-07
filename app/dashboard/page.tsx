@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/Badge";
 import {Button} from "@/components/ui/Button";
 import { fmtTz, sameDay, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
+import { addDays } from "@/lib/utils";
 import { useSessionsQuery, useStudentsQuery } from "@/hooks/useAppQueries";
-import type { Session, Student } from "@/types";
 
 function isSameMonth(date: Date, now: Date) {
   return (
@@ -35,10 +35,22 @@ export default function DashboardPage() {
   const router = useRouter();
   const { data: authSession } = useSession();
   const [tzOpen, setTzOpen] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const sessionsQuery = useSessionsQuery();
+  const [now, setNow] = useState(() => new Date());
+  const tzData = useTzData();
+  const primaryOffset = getPrimaryOffset(tzData);
+  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
+
+  // Fetch current month + the last week of the previous month.
+  const dashboardRange = useMemo(() => {
+    const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const from = addDays(lastDayPrevMonth, -lastDayPrevMonth.getDay());
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { from, to };
+  }, [now.getFullYear(), now.getMonth()]);
+
+  const sessionsQuery = useSessionsQuery({ ...dashboardRange, staleTime: 30_000 });
   const studentsQuery = useStudentsQuery();
+
   const loadState =
     sessionsQuery.isLoading || studentsQuery.isLoading
       ? "loading"
@@ -51,18 +63,10 @@ export default function DashboardPage() {
       : studentsQuery.error instanceof Error
         ? studentsQuery.error.message
         : null;
-  const [now, setNow] = useState(() => new Date());
-  const tzData = useTzData();
-  const primaryOffset = getPrimaryOffset(tzData);
-  const primaryTimeZone = tzData[0]?.timeZone ?? "Asia/Seoul";
 
-  useEffect(() => {
-    if (sessionsQuery.data) setSessions(sessionsQuery.data);
-  }, [sessionsQuery.data]);
-
-  useEffect(() => {
-    if (studentsQuery.data) setStudents(studentsQuery.data);
-  }, [studentsQuery.data]);
+  // Use data directly from React Query — no duplicate useState/useEffect.
+  const sessions = sessionsQuery.data ?? [];
+  const students = studentsQuery.data ?? [];
 
   useEffect(() => {
     const tick = () => setNow(new Date());
@@ -89,22 +93,23 @@ export default function DashboardPage() {
     [now, sessions],
   );
 
+  // Limit pending homework count to this month's sessions only.
   const pendingHomeworkCount = useMemo(
     () =>
-      sessions.reduce(
+      thisMonthSessions.reduce(
         (total, session) =>
           total + session.homework.filter((homework) => !homework.done).length,
         0,
       ),
-    [sessions],
+    [thisMonthSessions],
   );
 
   const pendingHomeworkSessionCount = useMemo(
     () =>
-      sessions.filter((session) =>
+      thisMonthSessions.filter((session) =>
         session.homework.some((homework) => !homework.done),
       ).length,
-    [sessions],
+    [thisMonthSessions],
   );
 
   const recentSessions = useMemo(

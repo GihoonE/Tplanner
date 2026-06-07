@@ -143,6 +143,10 @@ export function parseOptionalFocus(value: unknown) {
   return parseFocus(value);
 }
 
+export function parseRouteId(value: string) {
+  return parsePositiveInt(value, "id");
+}
+
 function valid<T>(value: T): ValidationResult<T> {
   return { ok: true, value };
 }

@@ -50,14 +50,16 @@ export default function CalendarPage() {
 
   const visibleRange = useMemo(() => {
     if (view === "month") {
-      const first = new Date(curMonth.getFullYear(), curMonth.getMonth() - 12, 1);
+      // ±2 months — covers the 5-month DOM window in MonthView (MONTH_WINDOW=2).
+      const first = new Date(curMonth.getFullYear(), curMonth.getMonth() - 2, 1);
       const from = addDays(first, -first.getDay());
-      const last = new Date(curMonth.getFullYear(), curMonth.getMonth() + 13, 0);
+      const last = new Date(curMonth.getFullYear(), curMonth.getMonth() + 3, 0);
       const to = addDays(last, 6 - last.getDay() + 1);
       return { from, to };
     }
     if (view === "week") {
-      return { from: addDays(curWeekStart, -7 * 16), to: addDays(curWeekStart, 7 * 17) };
+      // ±1 week — covers the 3-week DOM window in WeekView (WEEK_WINDOW=1).
+      return { from: addDays(curWeekStart, -7), to: addDays(curWeekStart, 14) };
     }
     const from = new Date(curDay);
     from.setHours(0, 0, 0, 0);

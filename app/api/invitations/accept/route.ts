@@ -5,6 +5,7 @@ import {
   isValidInviteCode,
   normalizeInviteCode,
 } from "@/lib/invitations";
+import { isInviteRateLimited, recordWrongInviteAttempt } from "@/lib/rateLimit";
 import { prisma } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
@@ -12,9 +13,17 @@ export async function POST(request: NextRequest) {
     const parent = await requireParent();
     if (parent.response) return parent.response;
 
+    if (isInviteRateLimited(parent.userId)) {
+      return NextResponse.json(
+        { error: "초대 코드 시도 횟수를 초과했습니다. 1시간 후 다시 시도해 주세요." },
+        { status: 429 },
+      );
+    }
+
     const body = await request.json();
     const code = normalizeInviteCode(body.code);
     if (!isValidInviteCode(code)) {
+      recordWrongInviteAttempt(parent.userId);
       return NextResponse.json(
         { error: "초대 코드는 8자리 영문 대문자와 숫자여야 합니다." },
         { status: 400 },
@@ -42,6 +51,7 @@ export async function POST(request: NextRequest) {
       },
     });
     if (!invitation) {
+      recordWrongInviteAttempt(parent.userId);
       return NextResponse.json(
         { error: "유효하지 않은 초대 코드입니다." },
         { status: 404 },
@@ -49,18 +59,21 @@ export async function POST(request: NextRequest) {
     }
     const now = new Date();
     if (invitation.revokedAt) {
+      recordWrongInviteAttempt(parent.userId);
       return NextResponse.json(
         { error: "취소된 초대 코드입니다." },
         { status: 410 },
       );
     }
     if (invitation.acceptedAt) {
+      recordWrongInviteAttempt(parent.userId);
       return NextResponse.json(
         { error: "이미 사용된 초대 코드입니다." },
         { status: 409 },
       );
     }
     if (invitation.expiresAt <= now) {
+      recordWrongInviteAttempt(parent.userId);
       return NextResponse.json(
         { error: "만료된 초대 코드입니다." },
         { status: 410 },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserRole, type UserRole } from "@/lib/auth/roles";
+import { isUserRole, type UserRole } from "@/lib/auth/roles";
 
 type InstructorAuth =
   | { userId: string; response?: never }
@@ -27,8 +27,8 @@ async function requireUser() {
     };
   }
 
-  const role = await getUserRole(userId);
-  if (!role) {
+  const role = session?.user?.role;
+  if (!isUserRole(role)) {
     return {
       response: NextResponse.json(
         { error: "역할 설정이 필요합니다." },
@@ -38,6 +38,24 @@ async function requireUser() {
   }
 
   return { userId, role };
+}
+
+type SignedInAuth =
+  | { userId: string; response?: never }
+  | { userId?: never; response: NextResponse };
+
+export async function requireSignedIn(): Promise<SignedInAuth> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return {
+      response: NextResponse.json(
+        { error: "로그인이 필요합니다." },
+        { status: 401 },
+      ),
+    };
+  }
+  return { userId };
 }
 
 export async function requireInstructor(): Promise<InstructorAuth> {

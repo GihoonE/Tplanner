@@ -115,3 +115,7 @@ export type CalendarView = "week" | "month" | "day";
 
 // ── Modal tabs ────────────────────────────
 export type SessionModalTab = "detail" | "record" | "new";
+
+// ── Shared preference types ───────────────
+export type ExtraTimezonePreference = { timeZone: string; on: boolean };
+export type SessionSaveState = "idle" | "saving" | "error" | "offline";

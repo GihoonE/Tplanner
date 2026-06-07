@@ -44,9 +44,22 @@ function isPublicPath(pathname: string) {
   );
 }
 
+const BODY_SIZE_LIMIT = 1024 * 1024; // 1 MB
+
 export async function middleware(request: NextRequest) {
   // 현재 주소 가져오기 (e.g. "/dashboard")
   const { pathname } = request.nextUrl;
+
+  // Body size guard — reject oversized payloads before parsing
+  if (["POST", "PATCH", "PUT", "DELETE"].includes(request.method)) {
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > BODY_SIZE_LIMIT) {
+      return NextResponse.json(
+        { error: "요청 크기가 1MB를 초과합니다." },
+        { status: 413 },
+      );
+    }
+  }
 
   const normalizedUrl = normalizeUrl(request.nextUrl);
   if (normalizedUrl) {
@@ -101,6 +114,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|api/me/role|api/debug-session|_next/static|_next/image|favicon.ico|images).*)",
+    "/((?!api/auth|api/me/role|_next/static|_next/image|favicon.ico|images).*)",
   ],
 };

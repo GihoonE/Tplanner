@@ -85,7 +85,6 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(
-      // students array에서 요소 하나씩 빼서 s로 callback함수에 넘김
       students.map((s) => {
         const lastSession = s.sessions[0];
         return {
@@ -119,6 +118,7 @@ export async function GET(request: NextRequest) {
             : null,
         };
       }),
+      { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } },
     );
   } catch (error) {
     console.error("[GET /api/students]", error);
