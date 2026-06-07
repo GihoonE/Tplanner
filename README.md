@@ -4,6 +4,19 @@
 
 쌤플래너는 개인 과외 선생님을 위한 수업 관리 서비스입니다.
 
+**배포** https://tplanner.co.kr
+
+**기술 스택**
+
+| 분류 | 기술 |
+|------|------|
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| State | Zustand, TanStack Query |
+| Backend | Prisma, PostgreSQL (Neon), NextAuth.js |
+| Deploy | Vercel |
+
+**만든 이** 이기훈 · [gl167@duke.edu](mailto:gl167@duke.edu)
+
 학생별 수업 일정, 수업 기록, 숙제, 리포트를 한곳에서 관리할 수 있도록 만들어졌습니다. 흩어진 메모와 캘린더, 숙제 체크, 학부모 공유용 정리까지 선생님의 반복 업무를 줄이고 수업 준비와 피드백에 더 집중할 수 있게 돕습니다.
 
 ## 어떤 문제를 해결하나요?

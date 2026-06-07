@@ -10,7 +10,7 @@ const ONE_HOUR_IN_SECONDS = 60 * 60;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  trustHost: process.env.NODE_ENV !== "production",
+  trustHost: true,
   session: {
     strategy: "jwt",
     maxAge: THREE_DAYS_IN_SECONDS,
@@ -23,7 +23,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   providers: [
-    Google({}),
+    Google({
+      allowDangerousEmailAccountLinking: true,
+    }),
     Kakao({
       clientId: process.env.AUTH_KAKAO_ID ?? process.env.KAKAO_API_KEY ?? "",
       clientSecret: process.env.AUTH_KAKAO_SECRET ?? "",
@@ -61,11 +63,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         user.name ??
         kakaoProfile?.kakao_account?.profile?.nickname ??
         kakaoProfile?.properties?.nickname;
-      const kakaoEmail =
-        kakaoProfile?.kakao_account?.is_email_verified &&
-        kakaoProfile?.kakao_account?.is_email_valid
-          ? kakaoProfile.kakao_account.email
-          : undefined;
+      const kakaoEmail = 
+          kakaoProfile?.kakao_account?.is_email_verified &&
+          kakaoProfile?.kakao_account?.is_email_valid ? kakaoProfile.kakao_account.email : undefined;
       const nextEmail = user.email ?? kakaoEmail;
       const nextImage =
         user.image ??
