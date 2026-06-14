@@ -8,7 +8,7 @@ export function GoogleSignInButton({ callbackUrl }: { callbackUrl?: string }) {
       type="button"
       onClick={() =>
         signIn("google", {
-          callbackUrl: callbackUrl || "/onboarding/role",
+          redirectTo: callbackUrl || "/onboarding/role",
         })
       }
       className="flex h-11 w-full items-center justify-center gap-3 rounded border border-[#dadce0] bg-white px-3 text-[14px] font-medium text-[#3c4043] shadow-none transition-colors hover:bg-[#f8fafd] focus:outline-none focus:ring-2 focus:ring-[#1a73e8]/20 active:bg-[#f1f3f4]"

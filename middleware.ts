@@ -38,7 +38,6 @@ function normalizeUrl(url: URL) {
 function isPublicPath(pathname: string) {
   return (
     pathname === "/" ||
-    pathname === "/login" ||
     pathname === "/privacy" ||
     pathname.startsWith("/docs/")
   );
@@ -47,7 +46,6 @@ function isPublicPath(pathname: string) {
 const BODY_SIZE_LIMIT = 1024 * 1024; // 1 MB
 
 export async function middleware(request: NextRequest) {
-  // 현재 주소 가져오기 (e.g. "/dashboard")
   const { pathname } = request.nextUrl;
 
   // Body size guard — reject oversized payloads before parsing
@@ -66,32 +64,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(normalizedUrl);
   }
 
+  // /login 외 공개 경로는 토큰 확인 없이 통과
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  // 현재 요청의 토큰 가져오기
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
     cookieName: AUTH_SESSION_COOKIE,
+    salt: AUTH_SESSION_COOKIE,
   });
 
-  // 토큰이 없으면 로그인 창으로 보내버림
+  // 이미 로그인된 유저가 /login 접근 시 홈으로 보냄
+  if (pathname === "/login") {
+    if (!token) return NextResponse.next();
+    const homePath = token.role === "parent" ? "/parent" : token.role === "instructor" ? "/dashboard" : "/onboarding/role";
+    return NextResponse.redirect(new URL(homePath, request.url));
+  }
+
   if (!token) {
-
-    // param = (relative path, base url)
-    const loginUrl = new URL("/login", request.url); 
-
-    // url이 /login?callbackUrl=http://localhost:3000/dashboard 
-    // 리디렉션 페이지에 추가정보를 주는거임 어디서 왔는지.
-    // loginUrl.searchParams.set("callbackUrl", request.url);
+    const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname + request.nextUrl.search);
-    // loginUrl -> "/login?callbackUrl=http://localhost:3000/"
     return NextResponse.redirect(loginUrl);
   }
 
-  // role 없는 로그인 유저 → 온보딩으로
   if (!token.role && pathname !== "/onboarding/role") {
     return NextResponse.redirect(new URL("/onboarding/role", request.url));
   }

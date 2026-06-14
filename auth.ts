@@ -8,6 +8,11 @@ import { isUserRole } from "@/lib/auth/roles";
 const THREE_DAYS_IN_SECONDS = 3 * 24 * 60 * 60;
 const ONE_HOUR_IN_SECONDS = 60 * 60;
 
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const SESSION_COOKIE_NAME = IS_PRODUCTION
+  ? "__Secure-authjs.session-token"
+  : "authjs.session-token";
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   trustHost: true,
@@ -18,6 +23,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   jwt: {
     maxAge: THREE_DAYS_IN_SECONDS,
+  },
+  cookies: {
+    sessionToken: {
+      name: SESSION_COOKIE_NAME,
+      options: {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        path: "/",
+        secure: IS_PRODUCTION,
+        maxAge: THREE_DAYS_IN_SECONDS,
+      },
+    },
   },
   pages: {
     signIn: "/login",
@@ -100,10 +117,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // This is the ONLY time we hit the DB here — subsequent requests read
       // the role straight from the stored JWT, saving one DB round-trip per request.
       if (user) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { role: true },
-        });
+        const fetchRole = () =>
+          prisma.user.findUnique({
+            where: { id: user.id },
+            select: { role: true },
+          });
+        let dbUser;
+        try {
+          dbUser = await fetchRole();
+        } catch {
+          // One retry for transient DB issues; throws on second failure → visible sign-in error
+          dbUser = await fetchRole();
+        }
         token.role = isUserRole(dbUser?.role) ? dbUser.role : null;
         return token;
       }
