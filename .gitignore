@@ -25,6 +25,7 @@ out/
 
 # Testing
 coverage/
+__tests__/
 
 # Debug logs
 npm-debug.log*
@@ -48,4 +49,5 @@ Thumbs.db
 FIX.md
 docs/problem_shooting.md
 
+# Local agent task notes
 tasks/

@@ -14,6 +14,10 @@ import {
 import { prisma } from "@/lib/db";
 import { serializeSession } from "@/lib/api/serializers";
 import { ok, err } from "@/lib/api/response";
+import {
+  parseHomeworkOperations,
+  applyHomeworkOperations,
+} from "@/lib/api/homeworkSnapshot";
 
 export async function GET(
   _req: NextRequest,
@@ -64,6 +68,8 @@ export async function PATCH(
 
     const body = await _req.json();
     const { place, notes, understanding, focus, start, end } = body;
+    const homeworkParam = parseHomeworkOperations(body.homeworkOperations);
+    if (!homeworkParam.ok) return err(homeworkParam.error, 400);
     const placeParam = parseOptionalString(place, "place");
     if (!placeParam.ok) return err(placeParam.error, 400);
     const notesParam = parseOptionalString(notes, "notes");
@@ -84,18 +90,18 @@ export async function PATCH(
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.lessonSession.update({
-        where: { id: numId },
-        data: {
+      const data = {
           ...(placeParam.value !== undefined && { place: placeParam.value }),
           ...(notesParam.value !== undefined && { notes: notesParam.value }),
           ...(understandingParam.value !== undefined && { understanding: understandingParam.value }),
           ...(focusParam.value !== undefined && { focus: focusParam.value }),
           ...(startParam.value !== undefined && { start: startParam.value }),
           ...(endParam.value !== undefined && { end: endParam.value }),
-          version: { increment: 1 },
-        },
-      });
+      };
+      if (Object.keys(data).length > 0) await tx.lessonSession.update({ where: { id: numId }, data: { ...data, version: { increment: 1 } } });
+      if (homeworkParam.value !== undefined) {
+        await applyHomeworkOperations(tx, numId, homeworkParam.value);
+      }
     });
 
     const updated = await prisma.lessonSession.findFirst({

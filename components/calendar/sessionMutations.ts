@@ -11,6 +11,8 @@ import {
   replaceTempSessionCaches,
 } from "@/lib/sessionCache";
 import { useTutorStore, type TutorStore } from "@/store";
+import { makeTempHomeworkId } from "@/lib/tempIds";
+import type { HomeworkOperation } from "@/lib/api/homeworkSnapshot";
 import type { Session } from "@/types";
 
 type StoreSessionActions = Pick<
@@ -69,7 +71,7 @@ export function cloneSessionDraft(source: Session, start: Date, end: Date): Sess
     start,
     end,
     version: 1,
-    homework: source.homework.map((item) => ({ ...item, id: makeTempSessionId() })),
+    homework: source.homework.map((item) => ({ ...item, id: makeTempHomeworkId() })),
   };
 }
 
@@ -220,8 +222,19 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
     const updateSessions = Object.keys(latest.pendingSessionEdits)
       .map(Number)
       .filter((id) => id > 0 && !latest.pendingSessionDeletes.includes(id))
-      .map((id) => latestSessionsById.get(id))
-      .filter((session): session is Session => Boolean(session));
+      .map((id) => {
+        const session = latestSessionsById.get(id);
+        if (!session) return null;
+        return {
+          session,
+          patch: latest.pendingSessionEdits[id]!,
+          homeworkOperations: latest.pendingSessionEdits[id]?.homeworkOperations,
+        };
+      })
+      .filter(
+        (item): item is { session: Session; patch: Record<string, unknown>; homeworkOperations: HomeworkOperation[] | undefined } =>
+          item !== null,
+      );
 
     const deleteIds = latest.pendingSessionDeletes.filter((id) => id > 0);
 
@@ -230,14 +243,15 @@ export async function flushPendingSessionChanges(queryClient: QueryClient) {
         ? apiJson<BatchResponse>("/api/sessions/batch", {
             method: "PATCH",
             body: JSON.stringify({
-              sessions: updateSessions.map((session) => ({
+              sessions: updateSessions.map(({ session, patch, homeworkOperations }) => ({
                 id: session.id,
-                start: session.start.toISOString(),
-                end: session.end.toISOString(),
-                place: session.place,
-                notes: session.notes,
-                understanding: session.understanding,
-                focus: session.focus,
+                ...(patch.start instanceof Date && { start: patch.start.toISOString() }),
+                ...(patch.end instanceof Date && { end: patch.end.toISOString() }),
+                ...(patch.place !== undefined && { place: patch.place }),
+                ...(patch.notes !== undefined && { notes: patch.notes }),
+                ...(patch.understanding !== undefined && { understanding: patch.understanding }),
+                ...(patch.focus !== undefined && { focus: patch.focus }),
+                ...(homeworkOperations !== undefined && { homeworkOperations }),
               })),
             }),
           })

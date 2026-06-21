@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/Button";
 import { resolveAvatarBg, resolveColorText } from "@/lib/studentColor";
 import { SessionTimePicker } from "@/components/records/SessionTimePicker";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { makeTempHomeworkId } from "@/lib/tempIds";
+import type { HomeworkOperation } from "@/lib/api/homeworkSnapshot";
+import { mergeHomeworkOperation } from "@/lib/homeworkOperations";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   Understanding,
@@ -38,13 +41,6 @@ type RecordEditorProps = {
   readOnly?: boolean;
 };
 
-type HomeworkFromApi = {
-  id: number;
-  sessionId: number;
-  text: string;
-  done: boolean;
-};
-
 export function RecordEditor({
   session,
   student,
@@ -61,6 +57,9 @@ export function RecordEditor({
   const [deleting, setDeleting] = useState(false);
   /** 삭제 확인 모달: null이면 닫힘, 숫자면 해당 id 삭제 대기 */
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [homeworkOperations, setHomeworkOperations] = useState<HomeworkOperation[]>([]);
+  const [editingHomeworkId, setEditingHomeworkId] = useState<number | null>(null);
+  const [editingHomeworkText, setEditingHomeworkText] = useState("");
 
   useEffect(() => {
     if (pendingDeleteId == null) return;
@@ -82,102 +81,43 @@ export function RecordEditor({
     onSessionChange({ ...sess, [key]: value });
   }
 
-  async function addHw() {
+  function addHw() {
     if (readOnly) return;
     if (!hwInput.trim()) return;
     const text = hwInput.trim();
-    setSaveError(null);
-    try {
-      const res = await fetch("/api/homeworks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: sess.id,
-          text,
-          done: false,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          typeof body.error === "string"
-            ? body.error
-            : "숙제 추가에 실패했습니다.",
-        );
-      }
-      const homework = (await res.json()) as HomeworkFromApi;
-      updateField("homework", [
-        ...sess.homework,
-        { id: homework.id, text: homework.text, done: homework.done },
-      ]);
-      setHwInput("");
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "숙제 추가에 실패했습니다.");
-    }
+    const item = { id: makeTempHomeworkId(), text, done: false };
+    updateHomework([
+      ...sess.homework,
+      item,
+    ], { type: "create", clientId: item.id, text, done: false });
+    setHwInput("");
   }
 
-  async function toggleHw(id: number) {
+  function toggleHw(id: number) {
     if (readOnly) return;
     const target = sess.homework.find((h) => h.id === id);
     if (!target) return;
-    const optimistic = sess.homework.map((h) =>
+    updateHomework(sess.homework.map((h) =>
       h.id === id ? { ...h, done: !h.done } : h,
-    );
-    updateField("homework", optimistic);
-    setSaveError(null);
-    try {
-      const res = await fetch(`/api/homeworks/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ done: !target.done }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          typeof body.error === "string"
-            ? body.error
-            : "숙제 수정에 실패했습니다.",
-        );
-      }
-      const homework = (await res.json()) as HomeworkFromApi;
-      updateField(
-        "homework",
-        optimistic.map((h) =>
-          h.id === id
-            ? { id: homework.id, text: homework.text, done: homework.done }
-            : h,
-        ),
-      );
-    } catch (e) {
-      updateField("homework", sess.homework);
-      setSaveError(e instanceof Error ? e.message : "숙제 수정에 실패했습니다.");
-    }
+    ), { type: "update", id, done: !target.done });
   }
 
-  async function removeHw(id: number) {
+  function removeHw(id: number) {
     if (readOnly) return;
-    const previous = sess.homework;
-    updateField(
-      "homework",
-      previous.filter((h) => h.id !== id),
-    );
-    setSaveError(null);
-    try {
-      const res = await fetch(`/api/homeworks/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          typeof body.error === "string"
-            ? body.error
-            : "숙제 삭제에 실패했습니다.",
-        );
-      }
-    } catch (e) {
-      updateField("homework", previous);
-      setSaveError(e instanceof Error ? e.message : "숙제 삭제에 실패했습니다.");
-    }
+    updateHomework(sess.homework.filter((h) => h.id !== id), { type: "delete", id });
+  }
+
+  function updateHomework(homework: Session["homework"], operation: HomeworkOperation) {
+    updateField("homework", homework);
+    setHomeworkOperations((current) => mergeHomeworkOperation(current, operation));
+  }
+
+  function renameHw(id: number, text: string) {
+    const nextText = text.trim();
+    const current = sess.homework.find((item) => item.id === id);
+    setEditingHomeworkId(null);
+    if (!current || !nextText || nextText === current.text) return;
+    updateHomework(sess.homework.map((item) => item.id === id ? { ...item, text: nextText } : item), { type: "update", id, text: nextText });
   }
 
   async function handleSave() {
@@ -194,6 +134,7 @@ export function RecordEditor({
           focus: sess.focus,
           start: sess.start.toISOString(),
           end: sess.end.toISOString(),
+          homeworkOperations,
         }),
       });
       if (!res.ok) {
@@ -226,6 +167,7 @@ export function RecordEditor({
         homework: row.homework,
         version: row.version ?? 1,
       });
+      setHomeworkOperations([]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -395,11 +337,31 @@ export function RecordEditor({
                     <span className="text-white text-[10px] font-bold">✓</span>
                   )}
                 </button>
-                <span
-                  className={`flex-1 ${h.done ? "line-through text-slate-300" : "text-slate-700"}`}
-                >
-                  {h.text}
-                </span>
+                {editingHomeworkId === h.id ? (
+                  <input
+                    autoFocus
+                    value={editingHomeworkText}
+                    onChange={(e) => setEditingHomeworkText(e.target.value)}
+                    onBlur={() => renameHw(h.id, editingHomeworkText)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") setEditingHomeworkId(null);
+                    }}
+                    className="flex-1 rounded border border-sky-300 px-1 outline-none"
+                  />
+                ) : (
+                  <span
+                    onDoubleClick={() => {
+                      if (readOnly) return;
+                      setEditingHomeworkId(h.id);
+                      setEditingHomeworkText(h.text);
+                    }}
+                    title={readOnly ? undefined : "더블클릭하여 숙제 이름 수정"}
+                    className={`flex-1 ${h.done ? "line-through text-slate-300" : "text-slate-700"} ${readOnly ? "" : "cursor-text"}`}
+                  >
+                    {h.text}
+                  </span>
+                )}
                 {!readOnly && (
                   <button
                     type="button"

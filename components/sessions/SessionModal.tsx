@@ -3,7 +3,11 @@
 import { useTutorStore, useNow, useTzData } from "@/store";
 import { useQueryClient } from "@tanstack/react-query";
 import { patchSessionCaches, removeSessionCaches } from "@/lib/sessionCache";
-import { flushPendingSessionChanges } from "@/components/calendar/sessionMutations";
+import {
+  flushPendingSessionChanges,
+} from "@/components/calendar/sessionMutations";
+import { makeTempHomeworkId } from "@/lib/tempIds";
+import { mergeHomeworkOperation } from "@/lib/homeworkOperations";
 import { fmtTz, formatFullDate, sessionStatusInPrimaryTimezone } from "@/lib/utils";
 import { getPrimaryOffset } from "@/lib/utils";
 import { resolveAvatarBg, resolveColorText, resolveColorTop } from "@/lib/studentColor";
@@ -43,13 +47,6 @@ type SessionFromApi = {
 
 // Date 변환된 세션 (UI에서 사용)
 type SessionWithDates = Session;
-
-type HomeworkFromApi = {
-  id: number;
-  sessionId: number;
-  text: string;
-  done: boolean;
-};
 
 type UpdateSessionField = <K extends keyof SessionWithDates>(
   key: K,
@@ -412,86 +409,48 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
     }
   }
 
-  async function addHw() {
+  function addHw() {
     if (readOnly) return;
     // trim(): 앞뒤 공백 제거
     // 공백 제거 후에 내용이 없거나 세션이 존재하지 않으면 함수 종료
     if (!hwInput.trim() || !session) return;
     const text = hwInput.trim();
-    try {
-      const res = await fetch("/api/homeworks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session.id,
-          text,
-          done: false,
-        }),
-      });
-      if (!res.ok) throw new Error("숙제 추가 실패");
-      const homework = (await res.json()) as HomeworkFromApi;
-      setSession({
-        ...session,
-        homework: [...session.homework, homework],
-      });
-      setHwInput("");
-    } catch {
-      setError("숙제 추가 실패");
-    }
+    const item = { id: makeTempHomeworkId(), text, done: false };
+    updateHomework([
+      ...session.homework,
+      item,
+    ], { type: "create", clientId: item.id, text, done: false });
+    setHwInput("");
   }
 
-  async function toggleHw(id: number) {
+  function toggleHw(id: number) {
     if (readOnly) return;
     if (!session) return;
     const target = session.homework.find((h) => h.id === id);
     if (!target) return;
-    const previous = session;
-    const optimistic = {
-      ...session,
-      homework: session.homework.map((h) =>
-        h.id === id ? { ...h, done: !h.done } : h,
-      ),
-    };
-    setSession(optimistic);
-    try {
-      const res = await fetch(`/api/homeworks/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ done: !target.done }),
-      });
-      if (!res.ok) throw new Error("숙제 수정 실패");
-      const homework = (await res.json()) as HomeworkFromApi;
-      setSession({
-        ...optimistic,
-        homework: optimistic.homework.map((h) =>
-          h.id === id
-            ? { id: homework.id, text: homework.text, done: homework.done }
-            : h,
-        ),
-      });
-    } catch {
-      setSession(previous);
-      setError("숙제 수정 실패");
-    }
+    updateHomework(
+      session.homework.map((h) => (h.id === id ? { ...h, done: !h.done } : h)),
+      { type: "update", id, done: !target.done },
+    );
   }
 
-  async function removeHw(id: number) {
+  function removeHw(id: number) {
     if (readOnly) return;
     if (!session) return;
-    const previous = session;
-    setSession({
-      ...session,
-      homework: session.homework.filter((h) => h.id !== id),
-    });
-    try {
-      const res = await fetch(`/api/homeworks/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("숙제 삭제 실패");
-    } catch {
-      setSession(previous);
-      setError("숙제 삭제 실패");
-    }
+    updateHomework(session.homework.filter((h) => h.id !== id), { type: "delete", id });
+  }
+
+  function renameHw(id: number, text: string) {
+    if (!session || !text.trim()) return;
+    updateHomework(session.homework.map((h) => h.id === id ? { ...h, text: text.trim() } : h), { type: "update", id, text: text.trim() });
+  }
+
+  function updateHomework(homework: Session["homework"], operation: { type: string; id?: number; clientId?: number; text?: string; done?: boolean }) {
+    if (!session) return;
+    const updated = { ...session, homework };
+    const current = useTutorStore.getState().pendingSessionEdits[session.id]?.homeworkOperations ?? [];
+    setSession(updated); upsertSession(updated); patchSessionCaches(queryClient, [updated]);
+    markSessionPendingUpdate(session.id, { homeworkOperations: mergeHomeworkOperation(current, operation as never) });
   }
 
   const color = student?.color ?? "s-blue";
@@ -582,6 +541,7 @@ export function SessionModal({ readOnly = false }: { readOnly?: boolean }) {
               onAddHw={addHw}
               onToggleHw={toggleHw}
               onRemoveHw={removeHw}
+              onRenameHw={renameHw}
               readOnly={readOnly}
             />
           )}
@@ -715,6 +675,7 @@ function RecordTab({
   onAddHw,
   onToggleHw,
   onRemoveHw,
+  onRenameHw,
   readOnly,
 }: {
   session: SessionWithDates;
@@ -724,6 +685,7 @@ function RecordTab({
   onAddHw: () => void;
   onToggleHw: (id: number) => void;
   onRemoveHw: (id: number) => void;
+  onRenameHw: (id: number, text: string) => void;
   readOnly: boolean;
 }) {
   return (
@@ -791,11 +753,14 @@ function RecordTab({
                   <span className="text-white text-[10px] font-bold">✓</span>
                 )}
               </button>
-              <span
+              <input
+                defaultValue={h.text}
+                readOnly={readOnly}
+                onDoubleClick={(e) => e.currentTarget.removeAttribute("readOnly")}
+                onBlur={(e) => onRenameHw(h.id, e.currentTarget.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                 className={`flex-1 ${h.done ? "line-through text-slate-300" : "text-slate-700"}`}
-              >
-                {h.text}
-              </span>
+              />
               {!readOnly && (
                 <button
                   onClick={() => onRemoveHw(h.id)}

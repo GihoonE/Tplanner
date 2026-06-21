@@ -14,6 +14,11 @@ import {
 } from "@/lib/api/validation";
 import { prisma } from "@/lib/db";
 import { serializeSession } from "@/lib/api/serializers";
+import {
+  parseHomeworkOperations,
+  applyHomeworkOperations,
+  type HomeworkOperation,
+} from "@/lib/api/homeworkSnapshot";
 
 type BatchResult<T = unknown> = {
   sessionId?: number;
@@ -198,6 +203,7 @@ export async function PATCH(request: NextRequest) {
     type ValidatedItem = {
       id: number;
       data: Record<string, unknown>;
+      homeworkOperations?: HomeworkOperation[];
     };
 
     const validItems: ValidatedItem[] = [];
@@ -223,6 +229,8 @@ export async function PATCH(request: NextRequest) {
         if (!startParam.ok) throw new Error(startParam.error);
         const endParam = parseOptionalDate(item?.end, "end");
         if (!endParam.ok) throw new Error(endParam.error);
+        const homeworkParam = parseHomeworkOperations(item?.homeworkOperations);
+        if (!homeworkParam.ok) throw new Error(homeworkParam.error);
 
         validItems.push({
           id: idParam.value,
@@ -233,8 +241,8 @@ export async function PATCH(request: NextRequest) {
             ...(focusParam.value !== undefined && { focus: focusParam.value }),
             ...(startParam.value !== undefined && { start: startParam.value }),
             ...(endParam.value !== undefined && { end: endParam.value }),
-            version: { increment: 1 },
           },
+          ...(homeworkParam.value !== undefined && { homeworkOperations: homeworkParam.value }),
         });
       } catch (error) {
         earlyErrors.push({
@@ -297,11 +305,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     // ── Step 3: batch update inside one transaction ────────────────────────────
-    await prisma.$transaction(
-      finalItems.map((item) =>
-        prisma.lessonSession.update({ where: { id: item.id }, data: item.data }),
-      ),
-    );
+    await prisma.$transaction(async (tx) => {
+      for (const item of finalItems) {
+        if (Object.keys(item.data).length > 0) await tx.lessonSession.update({ where: { id: item.id }, data: { ...item.data, version: { increment: 1 } } });
+        if (item.homeworkOperations !== undefined) {
+          await applyHomeworkOperations(tx, item.id, item.homeworkOperations);
+        }
+      }
+    });
 
     // ── Step 4: batch read updated sessions ────────────────────────────────────
     const finalIds = finalItems.map((item) => item.id);
@@ -319,7 +330,12 @@ export async function PATCH(request: NextRequest) {
       });
 
     return NextResponse.json({
-      results: [...earlyErrors, ...notOwnedErrors, ...timeErrors, ...successResults],
+      results: [
+        ...earlyErrors,
+        ...notOwnedErrors,
+        ...timeErrors,
+        ...successResults,
+      ],
     });
   } catch (error) {
     console.error("[PATCH /api/sessions/batch]", error);

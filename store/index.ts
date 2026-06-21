@@ -19,9 +19,11 @@ import type {
   SessionSaveState,
 } from "@/types";
 import { TZ_CATALOG } from "@/lib/constants";
+import type { HomeworkOperation } from "@/lib/api/homeworkSnapshot";
 
 type SessionPatch = Partial<Omit<Session, "id" | "homework">> & {
   homework?: Session["homework"];
+  homeworkOperations?: HomeworkOperation[];
 };
 
 // ── Initial timezone state ────────────────────────────────────────────────────
