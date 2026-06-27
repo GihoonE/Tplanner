@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireInstructor } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
-import { fmtTz, formatDow, formatMonthDay } from "@/lib/utils";
+import { TZ_CATALOG } from "@/lib/constants";
+import {
+  fmtTz,
+  formatDow,
+  formatMonthDay,
+  primaryWallClockDateFromKstDate,
+} from "@/lib/utils";
 
 type ReportOptions = {
   summary?: boolean;
@@ -27,11 +33,40 @@ function normalizeSessionIds(value: unknown) {
   return ids.length === value.length ? ids : null;
 }
 
+export function reportOffsetFromTimezone(timeZone: string | null | undefined) {
+  return (
+    TZ_CATALOG.find((timezone) => timezone.timeZone === timeZone)?.offset ?? 9
+  );
+}
+
+async function getUserReportOffset(userId: string) {
+  const preference = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { primaryTimezone: true },
+  });
+  return reportOffsetFromTimezone(preference?.primaryTimezone);
+}
+
+function primaryDate(date: Date, primaryOffset: number) {
+  return primaryWallClockDateFromKstDate(date, primaryOffset);
+}
+
+function formatPrimaryMonthDay(date: Date, primaryOffset: number) {
+  return formatMonthDay(primaryDate(date, primaryOffset));
+}
+
+function formatPrimaryDow(date: Date, primaryOffset: number) {
+  return formatDow(primaryDate(date, primaryOffset));
+}
+
 function sessionTitle(
   session: { start: Date; end: Date },
   primaryOffset: number,
 ) {
-  return `${formatMonthDay(session.start)} ${fmtTz(session.start, primaryOffset)}-${fmtTz(session.end, primaryOffset)}`;
+  return `${formatPrimaryMonthDay(session.start, primaryOffset)} ${fmtTz(
+    session.start,
+    primaryOffset,
+  )}-${fmtTz(session.end, primaryOffset)}`;
 }
 
 function formatAmPmTime(date: Date, primaryOffset: number) {
@@ -47,10 +82,16 @@ function summaryLine(
   primaryOffset: number,
 ) {
   const content = session.notes.trim() || "수업 내용 미기록";
-  return `${formatMonthDay(session.start)} (${formatDow(session.start)}) ${formatAmPmTime(session.start, primaryOffset)} ~ ${formatAmPmTime(session.end, primaryOffset)}: ${content}`;
+  return `${formatPrimaryMonthDay(session.start, primaryOffset)} (${formatPrimaryDow(
+    session.start,
+    primaryOffset,
+  )}) ${formatAmPmTime(session.start, primaryOffset)} ~ ${formatAmPmTime(
+    session.end,
+    primaryOffset,
+  )}: ${content}`;
 }
 
-function buildReportDraft({
+export function buildReportDraft({
   sessions,
   primaryOffset,
 }: {
@@ -107,11 +148,10 @@ export async function POST(request: NextRequest) {
     if (instructor.response) return instructor.response;
 
     const body = await request.json();
-    const { studentId, sessionIds, options, primaryOffset } = body as {
+    const { studentId, sessionIds, options } = body as {
       studentId?: unknown;
       sessionIds?: unknown;
       options?: ReportOptions;
-      primaryOffset?: unknown;
     };
 
     if (!isPositiveInteger(studentId)) {
@@ -129,10 +169,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const offset =
-      typeof primaryOffset === "number" && Number.isFinite(primaryOffset)
-        ? primaryOffset
-        : 9;
+    const offset = await getUserReportOffset(instructor.userId);
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, instructorId: instructor.userId },

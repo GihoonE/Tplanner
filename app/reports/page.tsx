@@ -415,7 +415,6 @@ export default function ReportsPage() {
           studentId: selectedStudent.id,
           sessionIds: checkedSessions.map((session) => session.id),
           options: reportOptions,
-          primaryOffset,
         }),
       });
       const body = await res.json().catch(() => ({}));
